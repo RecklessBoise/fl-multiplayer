@@ -14,19 +14,19 @@ from flmp_relay.midi import (
 
 
 class TestFindPort:
-    NAMES = ["IAC Driver FLMP In", "IAC Driver FLMP Out", "Other Synth"]
+    NAMES = ("IAC Driver FLMP In", "IAC Driver FLMP Out", "Other Synth")
 
     def test_exact_name(self):
-        assert find_port(self.NAMES, "IAC Driver FLMP Out") == "IAC Driver FLMP Out"
+        assert find_port(list(self.NAMES), "IAC Driver FLMP Out") == "IAC Driver FLMP Out"
 
     def test_suffix_match_is_case_insensitive(self):
-        assert find_port(self.NAMES, "flmp in") == "IAC Driver FLMP In"
+        assert find_port(list(self.NAMES), "flmp in") == "IAC Driver FLMP In"
 
     def test_does_not_confuse_in_and_out(self):
         assert find_port(["IAC Driver FLMP Out"], "FLMP In") is None
 
     def test_missing(self):
-        assert find_port(self.NAMES, "Nope") is None
+        assert find_port(list(self.NAMES), "Nope") is None
 
 
 class TestSysexConversion:
