@@ -15,6 +15,9 @@ cd ~/fl-multiplayer
   Menu *Fenêtre > Afficher le studio MIDI*, puis double-cliquez sur *Gestionnaire IAC*.
   Cochez *Le gestionnaire est en ligne*. Avec le bouton **+**, créez deux bus nommés
   exactement `FLMP In` et `FLMP Out`.
+  **Sans IAC :** sautez A1 et A2, et ajoutez `--virtual` à la commande `flmp join` de la
+  partie B. Le relais crée lui-même les ports `FLMP In` et `FLMP Out`. Ils n'existent que
+  tant qu'il tourne : lancez donc le relais **avant** FL Studio.
 - [ ] **A2. Diagnostic.** `uv run flmp doctor` doit afficher `OK` sur les trois lignes.
 - [ ] **A3. Script.** `uv run flmp install-script` doit répondre « Script installé dans … ».
 - [ ] **A4. FL Studio.** Quittez puis relancez FL. Ouvrez *Options > MIDI settings* :
