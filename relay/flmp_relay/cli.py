@@ -51,6 +51,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=f"demander le mot de passe du salon (sinon variable {SECRET_ENV})",
     )
     join.add_argument("--insecure", action="store_true", help="autoriser ws:// hors localhost")
+    join.add_argument(
+        "--virtual",
+        action="store_true",
+        help="créer soi-même les ports « FLMP In » / « FLMP Out » (pas besoin de bus IAC)",
+    )
     ports(join)
 
     mon = sub.add_parser("monitor", help="faux participant pour tester avec un seul FL")
@@ -204,7 +209,7 @@ async def doctor(
 
 async def _join(args: argparse.Namespace, secret: str | None) -> None:
     loop = asyncio.get_running_loop()
-    midi = MidoMidiIO.open(args.in_port, args.out_port, loop)
+    midi = MidoMidiIO.open(args.in_port, args.out_port, loop, virtual=args.virtual)
     try:
         relay = Relay(midi, args.server, args.room, args.name, secret, allow_insecure=args.insecure)
         await relay.run()

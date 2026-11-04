@@ -100,19 +100,23 @@ class MidoMidiIO:
         self._queue = queue
 
     @classmethod
-    def open(cls, in_name: str, out_name: str, loop: asyncio.AbstractEventLoop) -> MidoMidiIO:
-        """Open `in_name` (FL -> relay) and `out_name` (relay -> FL)."""
-        inputs, outputs = mido.get_input_names(), mido.get_output_names()
-        real_in = find_port(inputs, in_name)
-        if real_in is None:
-            raise MidiPortError(
-                f"Entrée MIDI « {in_name} » introuvable. Ports disponibles : {inputs or 'aucun'}"
-            )
-        real_out = find_port(outputs, out_name)
-        if real_out is None:
-            raise MidiPortError(
-                f"Sortie MIDI « {out_name} » introuvable. Ports disponibles : {outputs or 'aucun'}"
-            )
+    def open(
+        cls,
+        in_name: str,
+        out_name: str,
+        loop: asyncio.AbstractEventLoop,
+        virtual: bool = False,
+    ) -> MidoMidiIO:
+        """Open `in_name` (FL -> relay) and `out_name` (relay -> FL).
+
+        With `virtual`, the relay creates both ports itself under these names
+        (CoreMIDI virtual ports): no IAC bus is needed, and the ports exist
+        only while the relay runs.
+        """
+        if virtual:
+            real_in, real_out = in_name, out_name
+        else:
+            real_in, real_out = cls._find(in_name, out_name)
         queue: asyncio.Queue[bytes] = asyncio.Queue(QUEUE_LIMIT)
 
         def enqueue(frame: bytes) -> None:
@@ -127,14 +131,31 @@ class MidoMidiIO:
                 with contextlib.suppress(RuntimeError):  # loop already closed
                     loop.call_soon_threadsafe(enqueue, frame)
 
-        inport = mido.open_input(real_in, callback=on_message)
+        extra = {"virtual": True} if virtual else {}
+        inport = mido.open_input(real_in, callback=on_message, **extra)
         try:
-            outport = mido.open_output(real_out)
+            outport = mido.open_output(real_out, **extra)
         except Exception:
             inport.close()
             raise
-        log.info("MIDI : entrée « %s », sortie « %s »", real_in, real_out)
+        kind = "ports virtuels" if virtual else "ports"
+        log.info("MIDI (%s) : entrée « %s », sortie « %s »", kind, real_in, real_out)
         return cls(inport, outport, queue)
+
+    @staticmethod
+    def _find(in_name: str, out_name: str) -> tuple[str, str]:
+        inputs, outputs = mido.get_input_names(), mido.get_output_names()
+        real_in = find_port(inputs, in_name)
+        if real_in is None:
+            raise MidiPortError(
+                f"Entrée MIDI « {in_name} » introuvable. Ports disponibles : {inputs or 'aucun'}"
+            )
+        real_out = find_port(outputs, out_name)
+        if real_out is None:
+            raise MidiPortError(
+                f"Sortie MIDI « {out_name} » introuvable. Ports disponibles : {outputs or 'aucun'}"
+            )
+        return real_in, real_out
 
     async def receive(self) -> bytes:
         return await self._queue.get()
