@@ -284,7 +284,7 @@ class TestAbuse:
 
 
 async def test_snapshot_base_seq_reflects_changes_before_request(server, clients):
-    a, b, _pa, _pb = await pair(server, clients)
+    a, _b, _pa, _pb = await pair(server, clients)
     await a.send(type="change", kind="stop", index=None, value=0)
     await a.recv_type("change")
     c = await clients(a.url)
@@ -304,5 +304,6 @@ async def test_responder_is_never_a_peer_still_waiting_for_its_own_snapshot(serv
     await a.ws.close()  # A leaves before answering B and C, who both still wait
     for waiting in (b, c):
         assert (await waiting.recv_type("error"))["code"] == "snapshot_unavailable"
-    await b.nothing()
-    await c.nothing()
+    for waiting in (b, c):
+        await waiting.recv_type("peer_left")
+        await waiting.nothing()

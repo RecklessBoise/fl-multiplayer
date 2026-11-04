@@ -1,10 +1,9 @@
 import asyncio
 import contextlib
+import json
 
 import pytest
 from flmp_core.messages import Change, decode, encode
-import json
-
 from flmp_relay.bridge import FatalJoinError, Relay, check_server_url, clean
 from flmp_relay.midi import QueueMidiIO
 from flmp_server.app import Settings, start_server
@@ -182,21 +181,31 @@ class TestServerUrl:
 
 
 @contextlib.asynccontextmanager
-async def scripted_server(script, welcome_peers=()):
+async def scripted_server(
+    script, welcome_peers=(), late=(), welcome_delay=0.0, welcome_override=None
+):
     """A hostile/odd server: welcome, then send `script` messages, record replies."""
     received = []
 
     async def handler(ws):
         await ws.recv()  # join
-        await ws.send(
-            json.dumps(
-                {"type": "welcome", "peer": "pme", "room": "ROOM1", "peers": list(welcome_peers)}
-            )
-        )
+        await asyncio.sleep(welcome_delay)
+        welcome = {"type": "welcome", "peer": "pme", "room": "ROOM1", "peers": list(welcome_peers)}
+        await ws.send(welcome_override or json.dumps(welcome))
         for msg in script:
             await ws.send(msg if isinstance(msg, str) else json.dumps(msg))
-        async for raw in ws:
-            received.append(json.loads(raw))
+
+        async def send_late():
+            for delay, msg in late:
+                await asyncio.sleep(delay)
+                await ws.send(json.dumps(msg))
+
+        late_task = asyncio.create_task(send_late())
+        try:
+            async for raw in ws:
+                received.append(json.loads(raw))
+        finally:
+            late_task.cancel()
 
     srv = await serve(handler, "127.0.0.1", 0)
     try:
@@ -272,10 +281,6 @@ async def test_lost_echo_does_not_block_key_forever():
     # Server swallows our write (no echo); a later foreign change must still reach FL.
     io = QueueMidiIO()
     later = {"type": "change", "kind": "mix_vol", "index": 1, "value": 9, "seq": 2, "from": "p2"}
-
-    async def delayed():
-        await asyncio.sleep(0.4)
-        return later
 
     async with (
         scripted_server([], late=[(0.4, later)]) as (url, _),

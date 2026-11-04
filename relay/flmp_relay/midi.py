@@ -9,6 +9,7 @@ the end-to-end simulation.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from typing import Any, Protocol
 
@@ -123,7 +124,8 @@ class MidoMidiIO:
         def on_message(msg: mido.Message) -> None:  # runs on rtmidi's thread
             frame = frame_from_message(msg)
             if frame is not None:
-                loop.call_soon_threadsafe(enqueue, frame)
+                with contextlib.suppress(RuntimeError):  # loop already closed
+                    loop.call_soon_threadsafe(enqueue, frame)
 
         inport = mido.open_input(real_in, callback=on_message)
         try:
@@ -141,5 +143,7 @@ class MidoMidiIO:
         self._out.send(message_from_frame(frame))
 
     def close(self) -> None:
-        self._in.close()
-        self._out.close()
+        try:
+            self._in.close()
+        finally:
+            self._out.close()

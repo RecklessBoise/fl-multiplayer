@@ -30,6 +30,7 @@ log = logging.getLogger("flmp.server")
 
 ROOM_RE = re.compile(r"^[A-Z0-9]{4,12}$")
 NAME_MAX = 32
+SECRET_MIN = 8
 SECRET_MAX = 128
 POLICY_VIOLATION = 1008
 
@@ -46,6 +47,12 @@ class Settings:
     max_snapshot_changes: int = 20000
     max_bad_messages: int = 20
     send_queue_size: int = 2000
+    max_connections_per_ip: int = 16
+    max_rooms_per_ip: int = 8
+    max_failed_joins_per_ip: int = 10
+    failed_join_window: float = 300.0
+    max_hello_before_join: int = 3
+    trust_proxy_header: bool = False  # True only behind a proxy that sets Fly-Client-IP
 
 
 class ClientError(Exception):
@@ -84,6 +91,8 @@ class Peer:
         self.dropped = 0
         self.last_rate_error = 0.0
         self.bad_messages = 0
+        self.hellos = 0
+        self.ip = ""
 
     def push(self, msg: dict[str, Any]) -> None:
         if self.closing:
@@ -116,13 +125,14 @@ class Peer:
 
 
 class Room:
-    def __init__(self, code: str, secret_hash: bytes | None) -> None:
+    def __init__(self, code: str, secret_hash: bytes | None, creator_ip: str = "") -> None:
         self.code = code
         self.secret_hash = secret_hash
+        self.creator_ip = creator_ip
         self.peers: dict[str, Peer] = {}  # insertion order == join order
         self.seq = 0
-        # newcomer id -> (responder id, timeout task)
-        self.pending: dict[str, tuple[str, asyncio.Task[None]]] = {}
+        # newcomer id -> (responder id, timeout task, room seq when requested)
+        self.pending: dict[str, tuple[str, asyncio.Task[None], int]] = {}
 
     def broadcast(self, msg: dict[str, Any], exclude: str | None = None) -> None:
         for peer in self.peers.values():
@@ -138,25 +148,57 @@ class Hub:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.rooms: dict[str, Room] = {}
+        self.connections_by_ip: dict[str, int] = {}
+        self.failed_joins: dict[str, list[float]] = {}
+
+    def _client_ip(self, ws: ServerConnection) -> str:
+        if self.settings.trust_proxy_header and ws.request is not None:
+            forwarded = ws.request.headers.get("Fly-Client-IP")
+            if forwarded:
+                return forwarded.strip()
+        addr = ws.remote_address
+        return str(addr[0]) if addr else "?"
+
+    def _recent_failures(self, ip: str) -> list[float]:
+        cutoff = time.monotonic() - self.settings.failed_join_window
+        recent = [t for t in self.failed_joins.get(ip, []) if t > cutoff]
+        if recent:
+            self.failed_joins[ip] = recent
+        else:
+            self.failed_joins.pop(ip, None)
+        return recent
 
     # -- connection lifecycle -------------------------------------------------
 
     async def handle(self, ws: ServerConnection) -> None:
+        ip = self._client_ip(ws)
+        if self.connections_by_ip.get(ip, 0) >= self.settings.max_connections_per_ip:
+            await ws.close(POLICY_VIOLATION, "too many connections")
+            return
+        self.connections_by_ip[ip] = self.connections_by_ip.get(ip, 0) + 1
         peer = Peer(ws, self.settings)
+        peer.ip = ip
         writer = asyncio.create_task(peer.writer())
         try:
-            await self._read_loop(peer)
-        except ConnectionClosed:
-            pass
-        except ClientError as exc:  # fatal: report, then close
-            peer.push(_error(exc.code, str(exc)))
-            peer.close_soon()
-        finally:
-            self._leave(peer)
-        with contextlib.suppress(asyncio.TimeoutError, ConnectionClosed):
+            try:
+                await self._read_loop(peer)
+            except ConnectionClosed:
+                pass
+            except ClientError as exc:  # fatal: report, then close
+                peer.push(_error(exc.code, str(exc)))
+                peer.close_soon()
+            finally:
+                self._leave(peer)
             if peer.closing:
-                await asyncio.wait_for(asyncio.shield(writer), 1.0)
-        writer.cancel()
+                with contextlib.suppress(asyncio.TimeoutError, ConnectionClosed):
+                    await asyncio.wait_for(asyncio.shield(writer), 1.0)
+        finally:
+            writer.cancel()
+            left = self.connections_by_ip.get(ip, 1) - 1
+            if left > 0:
+                self.connections_by_ip[ip] = left
+            else:
+                self.connections_by_ip.pop(ip, None)
 
     async def _read_loop(self, peer: Peer) -> None:
         deadline = time.monotonic() + self.settings.join_timeout
@@ -205,6 +247,10 @@ class Hub:
             raise ClientError("bad_message", "expected an object with a type")
         kind = msg["type"]
         if kind == "hello":
+            if peer.room is None:
+                peer.hellos += 1
+                if peer.hellos > self.settings.max_hello_before_join:
+                    raise ClientError("too_many_errors", "join a room", fatal=True)
             peer.push({"type": "hello", "server": "flmp", "proto": PROTOCOL_VERSION})
         elif kind == "join":
             self._join(peer, msg)
@@ -234,18 +280,24 @@ class Hub:
         ):
             raise ClientError("bad_name", f"name: 1-{NAME_MAX} printable characters")
         if secret is not None and (
-            not isinstance(secret, str) or not 0 < len(secret) <= SECRET_MAX
+            not isinstance(secret, str) or not SECRET_MIN <= len(secret) <= SECRET_MAX
         ):
-            raise ClientError("bad_secret_format", f"secret: 1-{SECRET_MAX} characters")
+            raise ClientError("bad_secret_format", f"secret: {SECRET_MIN}-{SECRET_MAX} characters")
+        if len(self._recent_failures(peer.ip)) >= self.settings.max_failed_joins_per_ip:
+            raise ClientError("too_many_attempts", "too many failed attempts, wait", fatal=True)
         code = room_code.upper()
         room = self.rooms.get(code)
         if room is None:
             if len(self.rooms) >= self.settings.max_rooms:
                 raise ClientError("server_full", "too many rooms")
-            room = Room(code, _hash_secret(secret))
+            owned = sum(1 for r in self.rooms.values() if r.creator_ip == peer.ip)
+            if owned >= self.settings.max_rooms_per_ip:
+                raise ClientError("too_many_rooms", "too many rooms from your address")
+            room = Room(code, _hash_secret(secret), peer.ip)
             self.rooms[code] = room
         else:
             if not hmac.compare_digest(_hash_secret(secret), room.secret_hash or b""):
+                self.failed_joins.setdefault(peer.ip, []).append(time.monotonic())
                 log.info("bad secret for room %s", code)
                 raise ClientError("bad_secret", "wrong room secret", fatal=True)
             if len(room.peers) >= self.settings.max_peers_per_room:
@@ -259,16 +311,26 @@ class Hub:
         log.info("peer %s joined room %s (%d members)", peer.id, code, len(room.peers))
         self._request_snapshot(room, peer.id)
 
-    def _request_snapshot(self, room: Room, newcomer: str) -> None:
-        responder = next((p for p in room.peers.values() if p.id != newcomer), None)
-        if responder is None:
-            return
+    def _request_snapshot(
+        self, room: Room, newcomer: str, waiting: frozenset[str] = frozenset()
+    ) -> None:
         old = room.pending.pop(newcomer, None)
         if old:
             old[1].cancel()
+        others = [p for p in room.peers.values() if p.id != newcomer]
+        # A peer still waiting for its own snapshot has no state worth copying.
+        responder = next(
+            (p for p in others if p.id not in room.pending and p.id not in waiting), None
+        )
+        if responder is None:
+            if others and newcomer in room.peers:
+                room.peers[newcomer].push(
+                    _error("snapshot_unavailable", "no member can provide the state")
+                )
+            return
         task = asyncio.create_task(self._snapshot_timeout(room, newcomer))
-        room.pending[newcomer] = (responder.id, task)
-        responder.push({"type": "snapshot_request", "for": newcomer})
+        room.pending[newcomer] = (responder.id, task, room.seq)
+        responder.push({"type": "snapshot_request", "for": newcomer, "base_seq": room.seq})
 
     async def _snapshot_timeout(self, room: Room, newcomer: str) -> None:
         await asyncio.sleep(self.settings.snapshot_timeout)
@@ -316,7 +378,13 @@ class Hub:
         pending[1].cancel()
         room.seq += 1
         room.peers[target].push(
-            {"type": "snapshot", "from": peer.id, "seq": room.seq, "changes": changes}
+            {
+                "type": "snapshot",
+                "from": peer.id,
+                "seq": room.seq,
+                "base_seq": pending[2],
+                "changes": changes,
+            }
         )
 
     def _leave(self, peer: Peer) -> None:
@@ -328,11 +396,11 @@ class Hub:
         own = room.pending.pop(peer.id, None)
         if own:
             own[1].cancel()
-        for newcomer, (responder, task) in list(room.pending.items()):
-            if responder == peer.id:
-                task.cancel()
-                del room.pending[newcomer]
-                self._request_snapshot(room, newcomer)
+        orphans = frozenset(
+            n for n, (responder, _t, _s) in room.pending.items() if responder == peer.id
+        )
+        for newcomer in orphans:
+            self._request_snapshot(room, newcomer, waiting=orphans)
         if room.peers:
             room.broadcast({"type": "peer_left", "peer": peer.id})
         else:

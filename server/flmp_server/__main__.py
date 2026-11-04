@@ -29,7 +29,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 async def serve_forever(host: str, port: int) -> None:
-    server, url = await start_server(Settings(), host=host, port=port)
+    settings = Settings(trust_proxy_header=os.environ.get("FLMP_TRUST_PROXY") == "1")
+    server, url = await start_server(settings, host=host, port=port)
     logging.getLogger("flmp.server").info("listening on %s", url)
     async with server:
         await server.serve_forever()
