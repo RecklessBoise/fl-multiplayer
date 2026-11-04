@@ -139,3 +139,20 @@ def decode(raw: bytes | bytearray | list[int] | tuple[int, ...]) -> Change:
     change = Change(name, index, value)
     validate(change)
     return change
+
+
+FL_ONLY_KINDS = frozenset({"snapshot_req", "snapshot_begin", "snapshot_end"})
+NETWORK_KINDS = frozenset(KINDS) - FL_ONLY_KINDS
+
+
+def parse_fields(kind: object, index: object, value: object) -> Change:
+    """Build a validated, network-allowed Change from untrusted JSON fields."""
+    if not isinstance(kind, str) or kind not in NETWORK_KINDS:
+        raise ProtocolError("kind not allowed on the network")
+    if index is not None and not _is_int(index):
+        raise ProtocolError("bad index")
+    if not _is_int(value):
+        raise ProtocolError("bad value")
+    change = Change(kind, index, value)  # type: ignore[arg-type]
+    validate(change)
+    return change

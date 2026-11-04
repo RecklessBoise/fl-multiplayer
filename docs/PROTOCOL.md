@@ -64,3 +64,43 @@ Quand une valeur distante est appliquée à une clé, l'appelant doit faire `dis
 une ancienne valeur locale encore en attente l'écraserait chez les autres.
 
 Note : 16383 est impair, donc un pan centré se relit à environ 6e-5 près de 0.
+
+## Protocole réseau (relais ⇄ serveur, JSON sur WebSocket)
+
+| Sens | Message |
+|---|---|
+| client → serveur | `{"type":"hello"}` (diagnostic), `{"type":"join","room","name","secret"?,"proto":1}` |
+| client → serveur | `{"type":"change","kind","index","value"}` |
+| client → serveur | `{"type":"snapshot","for":<pair>,"changes":[[kind,index,value],…]}` (uniquement en réponse à une demande) |
+| serveur → client | `welcome`, `peer_joined`, `peer_left`, `error` (`code`, `message`) |
+| serveur → client | `{"type":"change",…,"seq","from"}`, diffusé à **tous**, émetteur compris |
+| serveur → client | `{"type":"snapshot_request","for","base_seq"}` puis, au nouvel arrivant, `{"type":"snapshot","from","seq","base_seq","changes"}` |
+
+### Le dernier qui écrit gagne
+
+- Le serveur numérote chaque changement (`seq`, propre au salon) et le diffuse à tout le salon,
+  émetteur compris, dans l'ordre des numéros.
+- Tant que l'écho d'une de nos écritures sur une clé n'est pas revenu, le relais ignore les
+  changements des autres sur cette clé. Ils sont forcément plus anciens que le nôtre, et les
+  autres recevront notre valeur juste après.
+- Une écriture sans écho expire au bout de 2 s : le serveur peut l'avoir rejetée ou limitée.
+
+### Arrivée dans un salon
+
+1. Le serveur demande l'état au plus ancien membre qui n'attend pas lui-même un snapshot. Il
+   note alors le numéro de séquence courant (`base_seq`).
+2. Le relais de ce membre demande à FL un export complet (`snapshot_req`, puis
+   `snapshot_begin` … `snapshot_end`). Un seul export de FL répond à tous les nouveaux arrivants
+   en attente.
+3. Le nouvel arrivant met de côté les changements reçus entre-temps. Il applique le snapshot,
+   sans toucher ses propres écritures encore en vol, puis rejoue uniquement les changements dont
+   `seq > base_seq`.
+4. Si aucun état n'arrive (`snapshot_timeout`, `snapshot_unavailable`, ou 15 s sans réponse), le
+   relais continue avec ce qu'il a.
+
+### Limites du serveur (par défaut)
+
+- 256 Kio par message, 200 messages/s par connexion (rafale de 400).
+- 8 membres par salon, 1000 salons au total.
+- Par adresse IP : 16 connexions, 8 salons créés, 10 échecs de mot de passe par tranche de 5 min.
+- Secret de 8 à 128 caractères, conservé en mémoire sous forme de hachage SHA-256.
