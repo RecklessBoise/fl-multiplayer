@@ -66,6 +66,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="dossier cible (par défaut : dossier Hardware de FL)",
     )
+    install.add_argument(
+        "--force",
+        action="store_true",
+        help="accepter un dossier cible d'un autre nom",
+    )
 
     doctor = sub.add_parser("doctor", help="vérifier l'installation")
     doctor.add_argument("--server", help="adresse du serveur à tester (optionnel)")
@@ -97,18 +102,36 @@ def _script_source() -> Path:
     return Path(flmp_core.__file__).resolve().parent.parent / SCRIPT_NAME
 
 
-def install_script(dest: Path) -> Path:
-    """Copy the FL script and its flmp_core package into `dest`."""
+EXPECTED_DIR_NAME = "FL Multiplayer"
+
+
+def install_script(dest: Path, force: bool = False) -> Path:
+    """Copy the FL script and its flmp_core package into `dest`.
+
+    Only a folder named "FL Multiplayer" is accepted unless `force`, because an
+    existing `flmp_core` folder in `dest` is replaced. Symlinks are refused, and
+    the new package is copied next to the old one before being swapped in.
+    """
+    if dest.name != EXPECTED_DIR_NAME and not force:
+        raise OSError(
+            f"le dossier cible doit s'appeler « {EXPECTED_DIR_NAME} » (ou utilisez --force)"
+        )
     source = _script_source()
     core = Path(flmp_core.__file__).resolve().parent
-    dest.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(source, dest / SCRIPT_NAME)
+    script_target = dest / SCRIPT_NAME
     target_core = dest / "flmp_core"
-    if target_core.is_symlink():
-        raise OSError(f"{target_core} est un lien symbolique : refus de le remplacer")
+    for path in (dest, script_target, target_core):
+        if path.is_symlink():
+            raise OSError(f"{path} est un lien symbolique : refus de l'écraser")
+    dest.mkdir(parents=True, exist_ok=True)
+    staging = dest / "flmp_core.new"
+    if staging.exists():
+        shutil.rmtree(staging)
+    shutil.copytree(core, staging, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     if target_core.exists():
         shutil.rmtree(target_core)
-    shutil.copytree(core, target_core, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    staging.rename(target_core)
+    shutil.copyfile(source, script_target)
     return dest
 
 
@@ -209,7 +232,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "install-script":
         dest = args.dest or default_script_dir()
         try:
-            install_script(dest)
+            install_script(dest, force=args.force)
         except OSError as exc:
             print(f"Installation impossible : {exc}", file=sys.stderr)
             return 1

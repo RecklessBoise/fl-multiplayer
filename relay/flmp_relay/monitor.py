@@ -7,6 +7,7 @@ It joins a room, prints what the others send, and turns typed commands
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import sys
 from typing import Any
@@ -41,19 +42,25 @@ def parse_command(line: str) -> dict[str, Any] | None:
 def describe(msg: dict[str, Any], names: dict[str, str]) -> str | None:
     kind = msg.get("type")
     if kind == "change":
-        who = clean(names.get(msg.get("from"), "?")).strip("'")
-        what, value = msg.get("kind"), msg.get("value")
+        sender = msg.get("from")
+        who = clean(names.get(sender, "?") if isinstance(sender, str) else "?").strip("'")
+        what, value, index = msg.get("kind"), msg.get("value"), msg.get("index")
+        if not isinstance(value, int) or isinstance(value, bool):
+            return f"{who} → valeur invalide ignorée"
         if what == "play":
             return f"{who} → lecture depuis le tick {value}"
         if what == "stop":
             return f"{who} → arrêt"
-        if what == "tempo" and isinstance(value, int):
+        if what == "tempo":
             return f"{who} → tempo {value / 1000:.3f} BPM"
-        return f"{who} → {clean(what)} [{msg.get('index')}] = {value}"
+        shown_index = index if isinstance(index, int) else "-"
+        return f"{who} → {clean(what)} [{shown_index}] = {value}"
     if kind == "peer_joined":
         return f"{clean(msg.get('name'))} a rejoint le salon"
     if kind == "peer_left":
-        return f"{clean(names.get(msg.get('peer'), 'Un participant'))} a quitté le salon"
+        peer = msg.get("peer")
+        name = names.get(peer, "Un participant") if isinstance(peer, str) else "Un participant"
+        return f"{clean(name)} a quitté le salon"
     if kind == "error":
         return f"Erreur serveur : {clean(msg.get('code'))}"
     return None
@@ -66,30 +73,41 @@ async def monitor(server: str, room: str, name: str, allow_insecure: bool = Fals
             json.dumps({"type": "join", "room": room, "name": name, "proto": PROTOCOL_VERSION})
         )
         welcome = json.loads(await ws.recv())
-        if welcome.get("type") != "welcome":
-            print(f"Refusé : {clean(welcome.get('code'))}")
+        if not isinstance(welcome, dict) or welcome.get("type") != "welcome":
+            code = welcome.get("code") if isinstance(welcome, dict) else None
+            print(f"Refusé : {clean(code)}")
             return
-        me = welcome["peer"]
-        names = {me: name}
-        names.update({p["peer"]: p["name"] for p in welcome.get("peers", [])})
+        me = welcome.get("peer")
+        names: dict[str, str] = {me: name} if isinstance(me, str) else {}
+        for p in welcome.get("peers") or []:
+            if isinstance(p, dict) and isinstance(p.get("peer"), str):
+                names[p["peer"]] = str(p.get("name"))
         print(f"Moniteur connecté au salon {clean(room)}. {HELP}")
+
+        async def handle(raw: str | bytes) -> None:
+            msg = json.loads(raw)
+            if not isinstance(msg, dict):
+                return
+            kind = msg.get("type")
+            if kind == "peer_joined" and isinstance(msg.get("peer"), str) and len(names) < 64:
+                names[msg["peer"]] = str(msg.get("name"))
+            if kind == "snapshot_request" and isinstance(msg.get("for"), str):
+                # We hold no FL state: answer at once so newcomers don't wait.
+                await ws.send(json.dumps({"type": "snapshot", "for": msg["for"], "changes": []}))
+                return
+            if kind == "change" and msg.get("from") == me:
+                return
+            text = describe(msg, names)
+            if text:
+                print(text)
 
         async def reader() -> None:
             async for raw in ws:
-                msg = json.loads(raw)
-                if msg.get("type") == "peer_joined":
-                    names[msg.get("peer")] = msg.get("name")
-                if msg.get("type") == "snapshot_request":
-                    # We hold no FL state: answer at once so newcomers don't wait.
-                    await ws.send(
-                        json.dumps({"type": "snapshot", "for": msg["for"], "changes": []})
-                    )
-                    continue
-                if msg.get("type") == "change" and msg.get("from") == me:
-                    continue
-                text = describe(msg, names)
-                if text:
-                    print(text)
+                try:
+                    await handle(raw)
+                except (ValueError, TypeError, KeyError):
+                    print("Message illisible du serveur ignoré")
+            print("Connexion fermée par le serveur. Tapez quit.")
 
         task = asyncio.create_task(reader())
         loop = asyncio.get_running_loop()
@@ -105,3 +123,5 @@ async def monitor(server: str, room: str, name: str, allow_insecure: bool = Fals
                 await ws.send(json.dumps({"type": "change", **cmd}))
         finally:
             task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task

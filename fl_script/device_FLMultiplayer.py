@@ -76,13 +76,29 @@ def _send(frame):
 
 
 _controller = None
+_last_failure = None
 
 
-def OnInit():
+def _guard(where, fn):
+    """Run fn(); never let an exception reach FL Studio (log each new one once)."""
+    global _last_failure
+    try:
+        return fn()
+    except Exception as exc:
+        text = where + ": " + repr(exc)
+        if text != _last_failure:
+            _last_failure = text
+            _log("FL Multiplayer : erreur dans " + text)
+        return None
+
+
+def _init():
     global _controller
+    _controller = None
     adapter = FLAdapter()
-    _controller = Controller(adapter, _send, _log)
-    _controller.on_init()
+    controller = Controller(adapter, _send, _log)
+    controller.on_init()
+    _controller = controller
     _log(f"FL Multiplayer {VERSION} chargé (API FL {adapter.api})")
     if not device.isAssigned():
         _log(
@@ -91,16 +107,22 @@ def OnInit():
         )
 
 
+def OnInit():
+    _guard("OnInit", _init)
+
+
 def OnDeInit():
     global _controller
     _controller = None
 
 
 def OnIdle():
-    if _controller is not None:
-        _controller.on_idle()
+    controller = _controller
+    if controller is not None:
+        _guard("OnIdle", controller.on_idle)
 
 
 def OnSysEx(msg):
-    if _controller is not None and _controller.on_sysex(msg.sysex):
+    controller = _controller
+    if controller is not None and _guard("OnSysEx", lambda: controller.on_sysex(msg.sysex)):
         msg.handled = True

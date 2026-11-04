@@ -23,7 +23,8 @@ cd ~/fl-multiplayer
   - **Input :** ⚠️ n'activez **pas** `IAC Driver FLMP Out`. FL relirait alors ses propres
     messages.
   - **Output :** sélectionnez `IAC Driver FLMP Out` et donnez-lui **le même numéro de port**
-    (`10`).
+    (`10`). Ne donnez ce numéro à aucune autre sortie, et n'attribuez **pas** de port de sortie
+    à `IAC Driver FLMP In`.
 - [ ] **A5. Message de démarrage.** Ouvrez *View > Script output* (le nom exact peut varier selon
   la version). Vous devez voir `FL Multiplayer 0.1.0-dev chargé (API FL N)`.
   **Notez N** (la version de l'API) **et votre version de FL Studio.**
@@ -57,7 +58,8 @@ Le relais doit afficher « Connecté au salon 'TEST1' ».
 - [ ] **B5.** `play 0`. FL lance la lecture depuis le début. `stop` l'arrête.
 - [ ] **B6.** `play 768`. FL démarre vers la mesure 3. Notez où exactement.
 - [ ] **B7.** Pendant que FL joue, tapez `play 0`. FL doit **continuer à jouer**, ramené au
-  début. Il ne doit pas se mettre en pause.
+  début. Il ne doit pas se mettre en pause. Notez si le saut se fait proprement ou avec un
+  accroc audible : je ne peux pas le vérifier sans FL.
 - [ ] **B8. Pas de boucle.** Après chaque action, attendez 5 s : le moniteur ne doit plus rien
   afficher, et FL ne doit pas clignoter entre deux états.
 - [ ] **B9. Reconnexion.** Faites Ctrl+C dans la fenêtre 1 (serveur), attendez que le relais
@@ -66,11 +68,18 @@ Le relais doit afficher « Connecté au salon 'TEST1' ».
 
 ## C. À deux (optionnel à ce stade, même réseau local)
 
-Le serveur public sera mis en place à l'étape 6. En attendant, sur le Mac A :
-`uv run flmp-server`, et notez l'adresse IP locale de A (*Réglages > Wi-Fi > Détails*).
+Le serveur public, chiffré (wss), sera mis en place à l'étape 6. En attendant, ce test passe
+**en clair sur le réseau local**. Faites-le uniquement sur un réseau de confiance (chez vous,
+pas un Wi-Fi public), et protégez le salon avec un mot de passe.
 
-- Sur A : `uv run flmp join --server ws://localhost:8765 --room JAM1 --name A`
-- Sur B : `uv run flmp join --server ws://IP_DE_A:8765 --room JAM1 --name B --insecure`
+Sur le Mac A, notez l'adresse IP locale (*Réglages > Wi-Fi > Détails*), puis lancez le serveur
+sur cette seule adresse : `uv run flmp-server --host IP_DE_A`.
+
+- Sur A : `uv run flmp join --server ws://IP_DE_A:8765 --room JAM1 --name A --insecure --ask-secret`
+- Sur B : `uv run flmp join --server ws://IP_DE_A:8765 --room JAM1 --name B --insecure --ask-secret`
+
+Tapez le même mot de passe (8 caractères minimum) des deux côtés. Arrêtez le serveur (Ctrl+C)
+après le test.
 
 - [ ] **C1.** Lecture et arrêt sur A : B suit. Puis l'inverse.
 - [ ] **C2.** Tempo sur B : A suit. Pas d'écho, pas de boucle.

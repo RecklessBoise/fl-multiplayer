@@ -231,7 +231,7 @@ def test_repeated_identical_errors_are_logged_once():
 
 
 def test_remote_tempo_outside_fl_range_is_rejected():
-    ctl, fl, out = make()
+    ctl, fl, _out = make()
     for bad in (0, 9999, 522001, 2_000_000):
         ctl.on_sysex(encode(Change("tempo", None, bad)))
     assert fl.calls == []

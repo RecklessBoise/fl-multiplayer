@@ -15,9 +15,20 @@ Built-ins only: this module runs inside FL Studio's embedded Python.
 from __future__ import annotations
 
 from .messages import NETWORK_KINDS, Change, ProtocolError, decode, encode
-from .state import REMOTE_CONFIRM_TICKS, StateTracker
+from .state import StateTracker
 
 MAX_TICKS = (1 << 28) - 1
+
+# After a remote play/stop, wait up to this many OnIdle calls for FL to report
+# the new state. FL's scripts have no clock, so this counts idles (~10-20 ms each).
+# If FL never gets there, resync silently: never echo a "stop" FL didn't do.
+TRANSPORT_CONFIRM_IDLES = 50
+
+# FL Studio's tempo range, in BPM * 1000.
+TEMPO_MIN = 10000
+TEMPO_MAX = 522000
+
+_FAILED = object()
 
 # How far FL may round a value we set, per kind, in wire units.
 TOLERANCE = {"tempo": 1, "mix_vol": 2, "mix_pan": 2, "ch_vol": 2, "ch_pan": 2}
@@ -30,7 +41,7 @@ class Controller:
         self.log = log
         self.tracker = StateTracker(TOLERANCE)
         self._playing = False
-        self._pending_play = None  # [expected bool, diffs left] after a remote play/stop
+        self._pending_play = None  # [expected bool, idles left] after a remote play/stop
         self.last_error = None
 
     # -- FL callbacks --------------------------------------------------------------
@@ -62,13 +73,13 @@ class Controller:
         elif kind in ("snapshot_begin", "snapshot_end"):
             pass  # values in between are applied like any remote change
         elif kind == "play":
-            self._playing = True
-            self._pending_play = [True, REMOTE_CONFIRM_TICKS]
-            self._call(lambda: self.fl.play_from(change.value), None)
+            if self._call(lambda: self.fl.play_from(change.value), _FAILED) is not _FAILED:
+                self._pending_play = [True, TRANSPORT_CONFIRM_IDLES]
         elif kind == "stop":
-            self._playing = False
-            self._pending_play = [False, REMOTE_CONFIRM_TICKS]
-            self._call(self.fl.stop, None)
+            if self._call(self.fl.stop, _FAILED) is not _FAILED:
+                self._pending_play = [False, TRANSPORT_CONFIRM_IDLES]
+        elif kind == "tempo" and not TEMPO_MIN <= change.value <= TEMPO_MAX:
+            pass  # outside what FL accepts: ignore
         elif self.tracker.knows(change.key):
             if self._call(lambda: self.fl.apply(change), False):
                 self.tracker.apply_remote(change)
@@ -84,13 +95,14 @@ class Controller:
         pending = self._pending_play
         if pending is not None:
             if playing == pending[0]:
-                self._pending_play = None
+                self._pending_play = None  # FL did what the peer asked
                 self._playing = playing
                 return
             pending[1] -= 1
-            if pending[1] > 0:
-                return  # FL may not have started/stopped yet
-            self._pending_play = None
+            if pending[1] <= 0:
+                self._pending_play = None  # FL never followed: resync, send nothing
+                self._playing = playing
+            return
         if playing == self._playing:
             return
         self._playing = playing
@@ -122,6 +134,9 @@ class Controller:
             return default
 
     def _error(self, exc: Exception) -> None:
-        self.last_error = repr(exc)
+        text = repr(exc)
+        if text == self.last_error:
+            return  # same failure every idle: log it once
+        self.last_error = text
         if self.log is not None:
-            self.log("FL Multiplayer : erreur " + self.last_error)
+            self.log("FL Multiplayer : erreur " + text)
