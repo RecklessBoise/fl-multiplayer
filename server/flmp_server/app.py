@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import re
@@ -140,6 +141,17 @@ class Room:
                 peer.push(msg)
 
 
+def ip_bucket(ip: str) -> str:
+    """Key for per-IP limits: IPv6 is grouped by /64 (one subscriber), IPv4 as is."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if addr.version == 6:
+        return str(ipaddress.ip_network(f"{addr}/64", strict=False))
+    return str(addr)
+
+
 def _hash_secret(secret: str | None) -> bytes:
     return b"" if secret is None else hashlib.sha256(secret.encode("utf-8")).digest()
 
@@ -155,9 +167,9 @@ class Hub:
         if self.settings.trust_proxy_header and ws.request is not None:
             forwarded = ws.request.headers.get("Fly-Client-IP")
             if forwarded:
-                return forwarded.strip()
+                return ip_bucket(forwarded.strip())
         addr = ws.remote_address
-        return str(addr[0]) if addr else "?"
+        return ip_bucket(str(addr[0])) if addr else "?"
 
     def _recent_failures(self, ip: str) -> list[float]:
         cutoff = time.monotonic() - self.settings.failed_join_window
@@ -301,6 +313,7 @@ class Hub:
                 log.info("bad secret for room %s", code)
                 raise ClientError("bad_secret", "wrong room secret", fatal=True)
             if len(room.peers) >= self.settings.max_peers_per_room:
+                self.failed_joins.setdefault(peer.ip, []).append(time.monotonic())
                 raise ClientError("room_full", "room is full")
         others = [{"peer": p.id, "name": p.name} for p in room.peers.values()]
         peer.name = name

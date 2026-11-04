@@ -255,20 +255,24 @@ async def test_only_one_snapshot_is_accepted_after_join():
         assert len(io.drain()) == 3  # begin, one value, end
 
 
-async def test_repeated_snapshot_requests_are_coalesced():
+async def test_request_during_pending_dump_gets_its_own_fresh_dump():
+    # A dump requested earlier may predate the later request's base_seq: never reuse it.
     script = [{"type": "snapshot_request", "for": "p2"}, {"type": "snapshot_request", "for": "p3"}]
     io = QueueMidiIO()
-    async with (
-        scripted_server(script) as (url, received),
-        running(Relay(io, url, "ROOM1", "Alice")),
+    async with scripted_server(script) as (url, received), running(
+        Relay(io, url, "ROOM1", "Alice")
     ):
         await asyncio.sleep(0.2)
         assert [decode(f).kind for f in io.drain()] == ["snapshot_req"]
-        io.fl_sends(frame("snapshot_begin", None, 0))
-        io.fl_sends(frame("mix_vol", 1, 3))
-        io.fl_sends(frame("snapshot_end", None, 0))
-        await asyncio.sleep(0.2)
-        assert sorted(m["for"] for m in received if m["type"] == "snapshot") == ["p2", "p3"]
+        for v in (3, 4):
+            io.fl_sends(frame("snapshot_begin", None, 0))
+            io.fl_sends(frame("mix_vol", 1, v))
+            io.fl_sends(frame("snapshot_end", None, 0))
+            await asyncio.sleep(0.2)
+            if v == 3:
+                assert [decode(f).kind for f in io.drain()] == ["snapshot_req"]
+        snaps = {m["for"]: m["changes"] for m in received if m["type"] == "snapshot"}
+        assert snaps == {"p2": [["mix_vol", 1, 3]], "p3": [["mix_vol", 1, 4]]}
 
 
 def test_clean_makes_untrusted_text_safe_for_logs():

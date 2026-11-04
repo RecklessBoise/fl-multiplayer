@@ -134,7 +134,8 @@ class Relay:
                 except Exception as exc:
                     if not self._stop.is_set():
                         log.warning(
-                            "Connexion au serveur impossible ou perdue : %s", exc or type(exc)
+                            "Connexion au serveur impossible ou perdue : %s",
+                            clean(str(exc) or type(exc).__name__, 120),
                         )
                 if self.connected.is_set() and self._clock() - started >= STABLE_SESSION:
                     attempt = 0

@@ -3,6 +3,8 @@
 Configuration comes from flags or environment variables (no secrets needed):
 FLMP_HOST (default 0.0.0.0), PORT or FLMP_PORT (default 8765), FLMP_LOG_LEVEL.
 TLS is expected to be terminated by the hosting platform (wss://).
+FLMP_TRUST_PROXY=1 trusts the Fly-Client-IP header for per-IP limits: set it ONLY
+behind Fly.io's proxy, never when the server is directly reachable (spoofable).
 """
 
 from __future__ import annotations
