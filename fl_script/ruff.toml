@@ -1,0 +1,7 @@
+# Code that runs inside FL Studio's embedded Python: keep conservative syntax.
+extend = "../pyproject.toml"
+target-version = "py37"
+
+[lint]
+# FL callbacks have fixed, untyped signatures.
+extend-ignore = ["ANN"]
