@@ -38,13 +38,19 @@ Les index tiennent sur 14 bits (0–16383).
 
 `StateTracker` (dans `state.py`) :
 
-1. Le premier `diff()` sert de référence : il n'émet rien.
-2. Chaque `diff()` suivant n'émet que les valeurs qui ont réellement changé, y compris les clés
-   apparues entre-temps.
-3. Une valeur reçue du réseau passe par `apply_remote()`. Quand FL la relit, elle n'est pas
-   renvoyée, même arrondie, dans une tolérance définie par type de message. Dès que
-   l'utilisateur s'éloigne de cette valeur, le suivi normal reprend.
-4. `suppressing()` met l'état à jour sans rien émettre, par exemple pendant l'application d'un
+1. `diff()` reçoit toujours l'état **complet**. Le premier appel sert de référence et n'émet
+   rien.
+2. Chaque `diff()` suivant n'émet que les valeurs qui ont réellement changé. Une clé apparue
+   entre-temps est signalée, une clé disparue est oubliée.
+3. Une valeur reçue du réseau est d'abord écrite dans FL, puis passe par `apply_remote()`.
+   `apply_remote()` refuse une clé qui n'existe pas dans le projet local et lève
+   `ProtocolError` si la valeur est invalide.
+4. La marque « valeur distante » ne sert qu'une fois. La première relecture qui correspond,
+   à la tolérance près, l'efface. Les petits mouvements suivants sont donc bien envoyés.
+5. Si FL relit une autre valeur, elle n'est pas renvoyée pendant `REMOTE_CONFIRM_TICKS` (3)
+   appels : FL n'a peut-être pas encore appliqué la valeur. Ensuite, elle compte comme un vrai
+   mouvement local.
+6. `suppressing()` met l'état à jour sans rien émettre, par exemple pendant l'application d'un
    snapshot.
 
 ## Throttling
@@ -53,3 +59,8 @@ Les index tiennent sur 14 bits (0–16383).
 30 messages/s par défaut. Le premier message part tout de suite. Pendant une rafale, seule la
 dernière valeur est gardée et envoyée à l'échéance, donc la valeur finale n'est jamais perdue.
 Les événements discrets (play, stop, mute, solo, pattern) ne sont pas limités.
+
+Quand une valeur distante est appliquée à une clé, l'appelant doit faire `discard(key)`. Sinon,
+une ancienne valeur locale encore en attente l'écraserait chez les autres.
+
+Note : 16383 est impair, donc un pan centré se relit à environ 6e-5 près de 0.

@@ -104,8 +104,19 @@ def encode(change: Change) -> bytes:
     return bytes(out)
 
 
-def decode(raw: bytes | list[int]) -> Change:
+MAX_FRAME = 16  # longest valid frame is 9 bytes
+
+
+def decode(raw: bytes | bytearray | list[int] | tuple[int, ...]) -> Change:
+    """Parse one SysEx frame. Raises only ProtocolError, whatever the input."""
+    if not isinstance(raw, (bytes, bytearray, list, tuple)):
+        raise ProtocolError("frame must be bytes or a list of ints")
+    if len(raw) > MAX_FRAME:
+        raise ProtocolError("frame too long")
     data = list(raw)
+    for b in data:
+        if type(b) is not int or not 0 <= b <= 0xFF:
+            raise ProtocolError("frame must contain byte values only")
     if len(data) < 5 or data[0] != SYSEX_START or data[-1] != SYSEX_END:
         raise ProtocolError("not a complete SysEx frame")
     if data[1] != MANUFACTURER_ID:

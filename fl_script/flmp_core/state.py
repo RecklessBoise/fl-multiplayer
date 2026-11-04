@@ -1,15 +1,20 @@
 """State diffing with anti-loop protection.
 
-The FL script reads the current values (as wire ints) into a dict keyed by
-`(kind, index)` and calls `diff` on every refresh. Values applied from the
-network go through `apply_remote`, so reading them back never produces an echo.
+The FL script reads the full current state (as wire ints) into a dict keyed by
+`(kind, index)` and calls `diff` on every refresh. A value received from the
+network is first written to FL, then recorded with `apply_remote`, so reading
+it back never produces an echo.
 
 Built-ins only: this module runs inside FL Studio's embedded Python.
 """
 
 from __future__ import annotations
 
-from .messages import Change
+from .messages import Change, validate
+
+# How many diffs a remote value waits for FL to report it before a different
+# reading is trusted as a real local move.
+REMOTE_CONFIRM_TICKS = 3
 
 
 def sort_key(key: tuple[str, int | None]) -> tuple[str, int]:
@@ -24,7 +29,7 @@ class _Suppress:
         self._tracker._suppress += 1
 
     def __exit__(self, *exc: object) -> None:
-        self._tracker._suppress -= 1
+        self._tracker._suppress = max(0, self._tracker._suppress - 1)
 
 
 class StateTracker:
@@ -37,7 +42,8 @@ class StateTracker:
     def __init__(self, tolerance: dict[str, int] | None = None) -> None:
         self._tolerance = dict(tolerance or {})
         self._known: dict[tuple[str, int | None], int] = {}
-        self._remote: dict[tuple[str, int | None], int] = {}
+        # key -> [remote value, diffs left before it expires]
+        self._remote: dict[tuple[str, int | None], list[int]] = {}
         self._suppress = 0
         self._baselined = False
 
@@ -45,33 +51,52 @@ class StateTracker:
         """Context manager: values read inside it update state silently."""
         return _Suppress(self)
 
-    def apply_remote(self, change: Change) -> None:
-        """Record a value that came from the network and is being applied."""
-        self._known[change.key] = change.value
-        self._remote[change.key] = change.value
+    def apply_remote(self, change: Change) -> bool:
+        """Record a network value that was just written to FL.
+
+        Returns False (and records nothing) for a key that does not exist in
+        the local project, so peers cannot grow our state with bogus indexes.
+        Raises ProtocolError for an invalid change.
+        """
+        validate(change)
+        key = change.key
+        if key not in self._known:
+            return False
+        self._known[key] = change.value
+        self._remote[key] = [change.value, REMOTE_CONFIRM_TICKS]
+        return True
 
     def diff(self, current: dict[tuple[str, int | None], int]) -> list[Change]:
         """Return local changes since the last call.
 
-        The first call only records a baseline. Afterwards, a key seen for the
-        first time (e.g. a channel added to the project) is a change.
+        `current` must be the full state. The first call only records a
+        baseline. Afterwards a key seen for the first time (e.g. a channel added
+        to the project) is a change, and keys no longer present are forgotten.
         """
         out = []
         baseline = not self._baselined
         self._baselined = True
+        for gone in [k for k in self._known if k not in current]:
+            del self._known[gone]
+            self._remote.pop(gone, None)
         for key in sorted(current, key=sort_key):
             value = current[key]
-            if self._suppress or (baseline and key not in self._known):
+            if self._suppress or baseline:
                 self._known[key] = value
                 self._remote.pop(key, None)
                 continue
+            pending = self._remote.get(key)
+            if pending is not None:
+                if abs(value - pending[0]) <= self._tolerance.get(key[0], 0):
+                    self._known[key] = value  # FL reported the remote value
+                    del self._remote[key]
+                    continue
+                pending[1] -= 1
+                if pending[1] > 0:
+                    continue  # FL may not have applied it yet
+                del self._remote[key]
             if value == self._known.get(key):
                 continue
-            remote = self._remote.get(key)
-            if remote is not None and abs(value - remote) <= self._tolerance.get(key[0], 0):
-                self._known[key] = value  # FL rounding of a remote value: absorb
-                continue
-            self._remote.pop(key, None)
             self._known[key] = value
             out.append(Change(key[0], key[1], value))
         return out

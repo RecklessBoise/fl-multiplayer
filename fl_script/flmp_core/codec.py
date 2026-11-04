@@ -26,8 +26,8 @@ def unpack_uint(data: list[int] | bytes) -> int:
 
 
 def unit_to_u14(x: float) -> int:
-    """Map 0.0..1.0 (clamped) to 0..16383."""
-    if x <= 0.0:
+    """Map 0.0..1.0 (clamped; NaN -> 0) to 0..16383."""
+    if x != x or x <= 0.0:
         return 0
     if x >= 1.0:
         return U14_MAX
@@ -35,13 +35,17 @@ def unit_to_u14(x: float) -> int:
 
 
 def u14_to_unit(v: int) -> float:
+    """Map 0..16383 to 0.0..1.0."""
     return v / U14_MAX
 
 
 def pan_to_u14(p: float) -> int:
-    """Map pan -1.0 (left)..1.0 (right) to 0..16383."""
+    """Map pan -1.0 (left)..1.0 (right) to 0..16383 (NaN -> 0)."""
+    if p != p:
+        return 0
     return unit_to_u14((p + 1.0) / 2.0)
 
 
 def u14_to_pan(v: int) -> float:
+    """Map 0..16383 to -1.0..1.0. 16383 is odd, so centre reads as ~6e-5."""
     return u14_to_unit(v) * 2.0 - 1.0
