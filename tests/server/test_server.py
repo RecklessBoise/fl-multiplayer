@@ -307,3 +307,23 @@ async def test_responder_is_never_a_peer_still_waiting_for_its_own_snapshot(serv
     for waiting in (b, c):
         await waiting.recv_type("peer_left")
         await waiting.nothing()
+
+
+async def test_room_full_counts_as_a_failed_join(server, clients):
+    url = await server(max_peers_per_room=1, max_failed_joins_per_ip=2)
+    owner = await clients(url)
+    await owner.join()
+    for _ in range(2):
+        c = await clients(url)
+        assert (await c.join(name="X"))["code"] == "room_full"
+    late = await clients(url)
+    assert (await late.join(room="OTHER1", name="Y"))["code"] == "too_many_attempts"
+
+
+def test_ipv6_addresses_are_grouped_by_64():
+    from flmp_server.app import ip_bucket
+
+    assert ip_bucket("2001:db8:1:2:aaaa::1") == ip_bucket("2001:db8:1:2:bbbb::9")
+    assert ip_bucket("2001:db8:1:3::1") != ip_bucket("2001:db8:1:2::1")
+    assert ip_bucket("203.0.113.7") == "203.0.113.7"
+    assert ip_bucket("not-an-ip") == "not-an-ip"
