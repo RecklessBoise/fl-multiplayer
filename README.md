@@ -33,8 +33,12 @@ Le guide d'installation pas à pas pour Mac sera ajouté avec la v0.1.0.
 ```bash
 uv sync
 uv run ruff check . && uv run ruff format --check .
-uv run pytest
+uv run pytest                 # unitaires + simulation de bout en bout (tests/e2e)
+uv run flmp-server --port 8765   # serveur local
+uv run flmp doctor --server ws://localhost:8765
 ```
+
+Protocole : voir [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 Voir [CONTRIBUTING.md](CONTRIBUTING.md).
 
