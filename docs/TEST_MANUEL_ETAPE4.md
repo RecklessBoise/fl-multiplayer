@@ -100,3 +100,5 @@ après le test.
   150 ms.
 - Si l'API de FL est antérieure à la version 3, la position de départ n'est pas synchronisée.
 - La lecture en cours n'est pas transmise à quelqu'un qui arrive : seul le tempo l'est.
+- Juste après une lecture ou un arrêt reçu d'un autre participant (moins d'une seconde environ),
+  un appui sur lecture ou arrêt de votre côté peut ne pas être transmis. Refaites-le.

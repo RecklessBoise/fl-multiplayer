@@ -15,6 +15,7 @@ from typing import Any
 from flmp_core import PROTOCOL_VERSION
 from flmp_core.messages import ProtocolError, parse_fields
 from websockets.asyncio.client import connect
+from websockets.exceptions import ConnectionClosed
 
 from flmp_relay.bridge import check_server_url, clean
 
@@ -102,11 +103,14 @@ async def monitor(server: str, room: str, name: str, allow_insecure: bool = Fals
                 print(text)
 
         async def reader() -> None:
-            async for raw in ws:
-                try:
-                    await handle(raw)
-                except (ValueError, TypeError, KeyError):
-                    print("Message illisible du serveur ignoré")
+            try:
+                async for raw in ws:
+                    try:
+                        await handle(raw)
+                    except (ValueError, TypeError, KeyError):
+                        print("Message illisible du serveur ignoré")
+            except ConnectionClosed:
+                pass
             print("Connexion fermée par le serveur. Tapez quit.")
 
         task = asyncio.create_task(reader())
