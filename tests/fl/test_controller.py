@@ -173,3 +173,68 @@ def test_errors_in_fl_calls_do_not_escape():
     fl.play_from = boom
     assert ctl.on_sysex(encode(Change("play", None, 0))) is True
     assert ctl.last_error is not None
+
+
+def test_slow_fl_never_echoes_a_stop_or_late_play():
+    ctl, fl, out = make()
+    fl.play_from = lambda pos: None  # FL takes a long time to start
+    ctl.on_sysex(encode(Change("play", None, 0)))
+    for _ in range(20):
+        ctl.on_idle()
+    fl.playing = True  # finally starts
+    for _ in range(3):
+        ctl.on_idle()
+    assert out == []
+
+
+def test_fl_that_never_follows_is_resynced_silently():
+    ctl, fl, out = make()
+    fl.play_from = lambda pos: None
+    ctl.on_sysex(encode(Change("play", None, 0)))
+    for _ in range(200):
+        ctl.on_idle()
+    assert out == []
+    fl.playing = True  # now a genuine local play, long after
+    ctl.on_idle()
+    assert out == [Change("play", None, 0)]
+
+
+def test_failed_play_from_leaves_transport_state_untouched():
+    ctl, fl, out = make()
+
+    def boom(_pos):
+        raise RuntimeError("no")
+
+    fl.play_from = boom
+    ctl.on_sysex(encode(Change("play", None, 0)))
+    ctl.on_idle()
+    assert out == []
+    fl.play_from = FakeFL.play_from.__get__(fl)
+    fl.playing = True  # user presses play
+    ctl.on_idle()
+    assert out == [Change("play", None, 0)]
+
+
+def test_repeated_identical_errors_are_logged_once():
+    logged = []
+    fl = FakeFL()
+    ctl = Controller(fl, lambda frame: None, logged.append)
+
+    def broken():
+        raise RuntimeError("tempo unavailable")
+
+    fl.read_state = broken
+    ctl.on_init()
+    for _ in range(50):
+        ctl.on_idle()
+    assert len(logged) == 1
+
+
+def test_remote_tempo_outside_fl_range_is_rejected():
+    ctl, fl, out = make()
+    for bad in (0, 9999, 522001, 2_000_000):
+        ctl.on_sysex(encode(Change("tempo", None, bad)))
+    assert fl.calls == []
+    ctl.on_sysex(encode(Change("tempo", None, 10000)))
+    ctl.on_sysex(encode(Change("tempo", None, 522000)))
+    assert fl.calls == [("tempo", 10000), ("tempo", 522000)]

@@ -36,3 +36,9 @@ class TestDescribe:
             "'Bob' a rejoint le salon"
         )
         assert describe({"type": "nope"}, {}) is None
+
+
+def test_describe_never_prints_raw_server_values():
+    msg = {"type": "change", "kind": "mix_vol", "index": 1, "value": "\x1b[2J", "from": "p1"}
+    text = describe(msg, {"p1": "Moi"})
+    assert "\x1b" not in text

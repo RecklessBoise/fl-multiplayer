@@ -114,3 +114,26 @@ class TestInstallScript:
             "Hardware",
             "FL Multiplayer",
         )
+
+
+class TestInstallScriptSafety:
+    def test_refuses_unexpected_destination_without_force(self, tmp_path):
+        dest = tmp_path / "Documents"
+        (dest / "flmp_core").mkdir(parents=True)
+        (dest / "flmp_core" / "precious.txt").write_text("keep me")
+        assert cli.main(["install-script", "--dest", str(dest)]) == 1
+        assert (dest / "flmp_core" / "precious.txt").read_text() == "keep me"
+
+    def test_force_allows_other_destination(self, tmp_path):
+        dest = tmp_path / "Elsewhere"
+        assert cli.main(["install-script", "--dest", str(dest), "--force"]) == 0
+        assert (dest / "device_FLMultiplayer.py").is_file()
+
+    def test_refuses_symlinked_script(self, tmp_path):
+        dest = tmp_path / "FL Multiplayer"
+        dest.mkdir()
+        target = tmp_path / "victim.txt"
+        target.write_text("original")
+        (dest / "device_FLMultiplayer.py").symlink_to(target)
+        assert cli.main(["install-script", "--dest", str(dest)]) == 1
+        assert target.read_text() == "original"

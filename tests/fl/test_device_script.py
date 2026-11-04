@@ -182,3 +182,24 @@ def test_deinit_is_safe(load):
     script = load(FakeFLStudio())
     script.OnDeInit()
     script.OnIdle()  # no crash after deinit
+
+
+def test_callbacks_never_raise_into_fl(load):
+    fl = FakeFLStudio()
+    script = load(fl)
+    msg = Msg(Change("stop", None, 0))
+    msg.sysex = None
+    script.OnSysEx(msg)  # must not raise
+    assert msg.handled is False
+
+
+def test_init_failure_does_not_raise(load, monkeypatch):
+    fl = FakeFLStudio()
+    script = load(fl)
+
+    def broken():
+        raise RuntimeError("no version")
+
+    monkeypatch.setattr(sys.modules["general"], "getVersion", broken)
+    script.OnInit()  # must not raise
+    script.OnIdle()
