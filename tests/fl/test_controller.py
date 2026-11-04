@@ -135,7 +135,7 @@ def test_change_for_unsupported_kind_is_ignored():
 
 
 def test_snapshot_request_dumps_state_framed():
-    ctl, fl, out = make(tempo=99000)
+    ctl, _fl, out = make(tempo=99000)
     ctl.on_sysex(encode(Change("snapshot_req", None, 0)))
     assert out == [
         Change("snapshot_begin", None, 0),
@@ -165,7 +165,7 @@ def test_incoming_snapshot_is_applied_without_echo():
 
 
 def test_errors_in_fl_calls_do_not_escape():
-    ctl, fl, out = make()
+    ctl, fl, _out = make()
 
     def boom(_pos):
         raise RuntimeError("FL said no")
