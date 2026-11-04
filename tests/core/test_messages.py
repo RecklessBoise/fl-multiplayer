@@ -115,3 +115,34 @@ def test_change_key_and_repr():
     assert "ch_pan" in repr(c)
     assert c != Change("ch_pan", 4, 11)
     assert c != "not a change"
+
+
+class TestParseFields:
+    def test_valid(self):
+        from flmp_core.messages import parse_fields
+
+        assert parse_fields("mix_vol", 2, 9) == Change("mix_vol", 2, 9)
+        assert parse_fields("tempo", None, 120000) == Change("tempo", None, 120000)
+
+    @pytest.mark.parametrize(
+        ("kind", "index", "value"),
+        [
+            ("snapshot_req", None, 0),  # FL-only kind never travels on the network
+            ("mix_vol", True, 1),
+            ("mix_vol", 1, 1.0),
+            ("mix_vol", "1", 1),
+            (None, None, 0),
+            ("mix_vol", 1, 16384),
+        ],
+    )
+    def test_invalid(self, kind, index, value):
+        from flmp_core.messages import parse_fields
+
+        with pytest.raises(ProtocolError):
+            parse_fields(kind, index, value)
+
+    def test_network_kinds(self):
+        from flmp_core.messages import NETWORK_KINDS
+
+        assert "mix_vol" in NETWORK_KINDS
+        assert not {"snapshot_req", "snapshot_begin", "snapshot_end"} & NETWORK_KINDS
