@@ -9,9 +9,13 @@ import getpass
 import json
 import logging
 import os
+import shutil
 import sys
 from collections.abc import Callable
+from importlib import resources
+from pathlib import Path
 
+import flmp_core
 import mido
 from websockets.asyncio.client import connect
 
@@ -49,11 +53,57 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     join.add_argument("--insecure", action="store_true", help="autoriser ws:// hors localhost")
     ports(join)
 
+    install = sub.add_parser("install-script", help="installer le script dans FL Studio")
+    install.add_argument(
+        "--dest",
+        type=Path,
+        default=None,
+        help="dossier cible (par défaut : dossier Hardware de FL)",
+    )
+
     doctor = sub.add_parser("doctor", help="vérifier l'installation")
     doctor.add_argument("--server", help="adresse du serveur à tester (optionnel)")
     doctor.add_argument("--insecure", action="store_true", help="autoriser ws:// hors localhost")
     ports(doctor)
     return parser.parse_args(argv)
+
+
+SCRIPT_NAME = "device_FLMultiplayer.py"
+
+
+def default_script_dir() -> Path:
+    return (
+        Path.home()
+        / "Documents"
+        / "Image-Line"
+        / "FL Studio"
+        / "Settings"
+        / "Hardware"
+        / "FL Multiplayer"
+    )
+
+
+def _script_source() -> Path:
+    """The FL script shipped in the wheel, or the one in a source checkout."""
+    packaged = resources.files("flmp_relay") / "fl_script" / SCRIPT_NAME
+    if packaged.is_file():
+        return Path(str(packaged))
+    return Path(flmp_core.__file__).resolve().parent.parent / SCRIPT_NAME
+
+
+def install_script(dest: Path) -> Path:
+    """Copy the FL script and its flmp_core package into `dest`."""
+    source = _script_source()
+    core = Path(flmp_core.__file__).resolve().parent
+    dest.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, dest / SCRIPT_NAME)
+    target_core = dest / "flmp_core"
+    if target_core.is_symlink():
+        raise OSError(f"{target_core} est un lien symbolique : refus de le remplacer")
+    if target_core.exists():
+        shutil.rmtree(target_core)
+    shutil.copytree(core, target_core, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    return dest
 
 
 def read_secret(args: argparse.Namespace) -> str | None:
@@ -140,6 +190,18 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(message)s",
         datefmt="%H:%M:%S",
     )
+    if args.command == "install-script":
+        dest = args.dest or default_script_dir()
+        try:
+            install_script(dest)
+        except OSError as exc:
+            print(f"Installation impossible : {exc}", file=sys.stderr)
+            return 1
+        print(f"Script installé dans : {dest}")
+        print(
+            "Redémarrez FL Studio, puis choisissez « FL Multiplayer » dans Options > MIDI settings."
+        )
+        return 0
     if args.command == "doctor":
         good = asyncio.run(doctor(args.server, args.in_port, args.out_port, print, args.insecure))
         return 0 if good else 1

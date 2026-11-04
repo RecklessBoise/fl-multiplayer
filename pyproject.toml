@@ -30,6 +30,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["fl_script/flmp_core", "relay/flmp_relay", "server/flmp_server"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"fl_script/device_FLMultiplayer.py" = "flmp_relay/fl_script/device_FLMultiplayer.py"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["fl_script", "relay", "server"]
