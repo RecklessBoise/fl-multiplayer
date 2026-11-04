@@ -53,6 +53,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     join.add_argument("--insecure", action="store_true", help="autoriser ws:// hors localhost")
     ports(join)
 
+    mon = sub.add_parser("monitor", help="faux participant pour tester avec un seul FL")
+    mon.add_argument("--server", required=True, help="adresse du serveur")
+    mon.add_argument("--room", required=True, help="code du salon")
+    mon.add_argument("--name", default="Moniteur", help="pseudo affiché (Moniteur)")
+    mon.add_argument("--insecure", action="store_true", help="autoriser ws:// hors localhost")
+
     install = sub.add_parser("install-script", help="installer le script dans FL Studio")
     install.add_argument(
         "--dest",
@@ -190,6 +196,16 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(message)s",
         datefmt="%H:%M:%S",
     )
+    if args.command == "monitor":
+        from flmp_relay.monitor import monitor
+
+        try:
+            with contextlib.suppress(KeyboardInterrupt):
+                asyncio.run(monitor(args.server, args.room, args.name, args.insecure))
+        except (ValueError, OSError) as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        return 0
     if args.command == "install-script":
         dest = args.dest or default_script_dir()
         try:
