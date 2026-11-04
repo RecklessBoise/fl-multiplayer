@@ -21,7 +21,7 @@ from http import HTTPStatus
 from typing import Any
 
 from flmp_core import PROTOCOL_VERSION
-from flmp_core.messages import KINDS, Change, ProtocolError, validate
+from flmp_core.messages import ProtocolError, parse_fields
 from websockets.asyncio.server import Server, ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request, Response
@@ -31,8 +31,6 @@ log = logging.getLogger("flmp.server")
 ROOM_RE = re.compile(r"^[A-Z0-9]{4,12}$")
 NAME_MAX = 32
 SECRET_MAX = 128
-FL_ONLY_KINDS = frozenset({"snapshot_req", "snapshot_begin", "snapshot_end"})
-NETWORK_KINDS = frozenset(KINDS) - FL_ONLY_KINDS
 POLICY_VIOLATION = 1008
 
 
@@ -134,23 +132,6 @@ class Room:
 
 def _hash_secret(secret: str | None) -> bytes:
     return b"" if secret is None else hashlib.sha256(secret.encode("utf-8")).digest()
-
-
-def _is_int(x: object) -> bool:
-    return isinstance(x, int) and not isinstance(x, bool)
-
-
-def parse_change(kind: Any, index: Any, value: Any) -> Change:
-    """Build a validated Change from untrusted JSON fields."""
-    if not isinstance(kind, str) or kind not in NETWORK_KINDS:
-        raise ProtocolError("kind not allowed")
-    if index is not None and not _is_int(index):
-        raise ProtocolError("bad index")
-    if not _is_int(value):
-        raise ProtocolError("bad value")
-    change = Change(kind, index, value)
-    validate(change)
-    return change
 
 
 class Hub:
@@ -296,7 +277,7 @@ class Hub:
 
     def _change(self, peer: Peer, room: Room, msg: dict[str, Any]) -> None:
         try:
-            change = parse_change(msg.get("kind"), msg.get("index"), msg.get("value"))
+            change = parse_fields(msg.get("kind"), msg.get("index"), msg.get("value"))
         except ProtocolError as exc:
             raise ClientError("bad_change", str(exc)) from exc
         room.seq += 1
@@ -327,7 +308,7 @@ class Hub:
             for item in raw_changes:
                 if not isinstance(item, list) or len(item) != 3:
                     raise ProtocolError("each change is [kind, index, value]")
-                c = parse_change(*item)
+                c = parse_fields(*item)
                 changes.append([c.kind, c.index, c.value])
         except ProtocolError as exc:
             raise ClientError("bad_snapshot", str(exc)) from exc
