@@ -84,6 +84,14 @@ def test_discard_drops_pending_value():
     assert th.flush(now=1.0) == []
 
 
+def test_move_back_after_discard_is_sent():
+    # Sent X, remote Y applied, user moves back to X: peers must get X.
+    th = Throttle(max_per_second=30)
+    th.offer(vol(5), now=0.0)
+    th.discard(vol(0).key)
+    assert th.offer(vol(5), now=0.01) == [vol(5)]
+
+
 def test_clear_drops_everything():
     th = Throttle(max_per_second=30)
     th.offer(vol(1), now=0.0)

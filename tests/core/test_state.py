@@ -102,6 +102,12 @@ class TestAntiLoop:
         assert t.apply_remote(Change("ch_vol", 900, 10)) is False
         assert ("ch_vol", 900) not in [c.key for c in t.snapshot()]
 
+    def test_knows_tells_caller_whether_to_write_to_fl(self):
+        t = tracker()
+        assert t.knows(VOL)
+        assert not t.knows(("ch_vol", 900))
+        assert not StateTracker().knows(VOL)
+
     def test_remote_before_baseline_is_rejected(self):
         t = StateTracker()
         assert t.apply_remote(Change("mix_pan", 4, 8192)) is False
