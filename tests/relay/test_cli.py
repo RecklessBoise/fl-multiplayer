@@ -86,3 +86,31 @@ class TestMain:
     def test_doctor_exit_code(self, ports, capsys):
         assert cli.main(["doctor"]) == 0
         assert "OK" in capsys.readouterr().out
+
+
+class TestInstallScript:
+    def test_copies_script_and_core_package(self, tmp_path):
+        dest = tmp_path / "FL Multiplayer"
+        assert cli.main(["install-script", "--dest", str(dest)]) == 0
+        script = dest / "device_FLMultiplayer.py"
+        assert script.read_text(encoding="utf-8").startswith("# name=FL Multiplayer")
+        assert (dest / "flmp_core" / "controller.py").is_file()
+        assert not list(dest.rglob("__pycache__"))
+
+    def test_reinstall_replaces_old_core_but_keeps_other_files(self, tmp_path):
+        dest = tmp_path / "FL Multiplayer"
+        (dest / "flmp_core").mkdir(parents=True)
+        (dest / "flmp_core" / "stale.py").write_text("old")
+        (dest / "notes.txt").write_text("mine")
+        assert cli.main(["install-script", "--dest", str(dest)]) == 0
+        assert not (dest / "flmp_core" / "stale.py").exists()
+        assert (dest / "notes.txt").read_text() == "mine"
+
+    def test_default_destination_is_fl_hardware_folder(self):
+        assert cli.default_script_dir().parts[-5:] == (
+            "Image-Line",
+            "FL Studio",
+            "Settings",
+            "Hardware",
+            "FL Multiplayer",
+        )
