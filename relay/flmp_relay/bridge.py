@@ -110,8 +110,10 @@ class Relay:
 
     def _reset_session_state(self) -> None:
         # Answering snapshot requests (we are the responder).
-        self._targets: list[str] = []
+        self._targets: list[str] = []  # newcomers served by the dump requested from FL
+        self._next_targets: list[str] = []  # arrived after that request: need a fresh dump
         self._requested_at = 0.0
+        self._last_frame_error = 0.0
         self._collecting: list[Change] | None = None
         # Receiving our own snapshot (we are the newcomer).
         self._awaiting = False
@@ -247,7 +249,10 @@ class Relay:
             except ConnectionClosed:
                 pass
             except Exception:
-                log.exception("Erreur en traitant un message de FL")
+                now = self._clock()
+                if now - self._last_frame_error > 5.0:  # avoid flooding the log
+                    self._last_frame_error = now
+                    log.exception("Erreur en traitant un message de FL")
 
     async def _handle_fl_frame(self, ws: ClientConnection, frame: bytes) -> None:
         try:
@@ -267,6 +272,7 @@ class Relay:
                 log.info("État complet envoyé (%d valeurs)", len(payload))
             self._collecting = None
             self._targets = []
+            self._start_next_dump()
         elif change.kind in NETWORK_KINDS:
             if self._collecting is not None:
                 if len(self._collecting) < MAX_SNAPSHOT_ITEMS:
@@ -301,6 +307,7 @@ class Relay:
                 log.warning("FL n'a pas fourni l'état complet à temps (script FL actif ?)")
                 self._targets = []
                 self._collecting = None
+                self._start_next_dump()
             if self._awaiting and now > self._await_deadline:
                 log.warning("État complet non reçu : on continue sans")
                 self._end_waiting()
@@ -374,15 +381,23 @@ class Relay:
 
     def _on_snapshot_request(self, msg: dict[str, Any]) -> None:
         target = msg.get("for")
-        if not isinstance(target, str) or target in self._targets:
+        if not isinstance(target, str) or target in self._targets + self._next_targets:
             return
-        if len(self._targets) >= MAX_SNAPSHOT_TARGETS:
+        if len(self._targets) + len(self._next_targets) >= MAX_SNAPSHOT_TARGETS:
             return
-        self._targets.append(target)
-        if len(self._targets) == 1:  # one FL dump answers every pending newcomer
-            self._requested_at = self._clock()
-            self.midi.send(encode(Change("snapshot_req", None, 0)))
-            log.info("Un participant arrive : envoi de l'état complet demandé à FL")
+        # A dump already requested from FL may predate this request's base_seq,
+        # so a late newcomer waits for a fresh dump instead of reusing it.
+        self._next_targets.append(target)
+        if not self._targets:
+            self._start_next_dump()
+
+    def _start_next_dump(self) -> None:
+        if self._targets or not self._next_targets:
+            return
+        self._targets, self._next_targets = self._next_targets, []
+        self._requested_at = self._clock()
+        self.midi.send(encode(Change("snapshot_req", None, 0)))
+        log.info("Un participant arrive : envoi de l'état complet demandé à FL")
 
     async def _on_snapshot(self, msg: dict[str, Any]) -> None:
         if not self._awaiting:

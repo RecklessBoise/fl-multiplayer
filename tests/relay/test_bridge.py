@@ -259,8 +259,9 @@ async def test_request_during_pending_dump_gets_its_own_fresh_dump():
     # A dump requested earlier may predate the later request's base_seq: never reuse it.
     script = [{"type": "snapshot_request", "for": "p2"}, {"type": "snapshot_request", "for": "p3"}]
     io = QueueMidiIO()
-    async with scripted_server(script) as (url, received), running(
-        Relay(io, url, "ROOM1", "Alice")
+    async with (
+        scripted_server(script) as (url, received),
+        running(Relay(io, url, "ROOM1", "Alice")),
     ):
         await asyncio.sleep(0.2)
         assert [decode(f).kind for f in io.drain()] == ["snapshot_req"]
