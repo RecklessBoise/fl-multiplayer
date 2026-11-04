@@ -21,6 +21,13 @@ class TestArgs:
         assert (args.server, args.room, args.name) == ("wss://x.org", "abcd", "Al")
         assert args.in_port == "FLMP Out" and args.out_port == "FLMP In"
         assert cli.read_secret(args) is None
+        assert args.virtual is False
+
+    def test_join_virtual_flag(self):
+        args = cli.parse_args(
+            ["join", "--server", "wss://x.org", "--room", "abcd", "--name", "Al", "--virtual"]
+        )
+        assert args.virtual is True
 
     def test_secret_from_env(self, monkeypatch):
         monkeypatch.setenv(cli.SECRET_ENV, "from-env")

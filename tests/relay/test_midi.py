@@ -115,3 +115,30 @@ def test_mido_io_reports_missing_ports(fake_mido, monkeypatch):
             MidoMidiIO.open("FLMP Out", "FLMP In", loop)
     finally:
         loop.close()
+
+
+def test_mido_io_virtual_ports_need_no_iac(fake_mido, monkeypatch):
+    # No IAC bus at all: the relay creates its own ports, named as FL will see them.
+    monkeypatch.setattr(midi_mod.mido, "get_input_names", list)
+    monkeypatch.setattr(midi_mod.mido, "get_output_names", list)
+    calls = []
+
+    def open_input(name, callback=None, virtual=False):
+        calls.append(("in", name, virtual))
+        fake_mido["in"] = FakeInput(name, callback)
+        return fake_mido["in"]
+
+    def open_output(name, virtual=False):
+        calls.append(("out", name, virtual))
+        fake_mido["out"] = FakeOutput(name)
+        return fake_mido["out"]
+
+    monkeypatch.setattr(midi_mod.mido, "open_input", open_input)
+    monkeypatch.setattr(midi_mod.mido, "open_output", open_output)
+    loop = asyncio.new_event_loop()
+    try:
+        io = MidoMidiIO.open("FLMP Out", "FLMP In", loop, virtual=True)
+    finally:
+        loop.close()
+    assert calls == [("in", "FLMP Out", True), ("out", "FLMP In", True)]
+    io.close()
