@@ -11,10 +11,6 @@ dependencies = [
     "websockets>=13",
 ]
 
-[project.scripts]
-flmp = "flmp_relay.cli:main"
-flmp-server = "flmp_server.__main__:main"
-
 [dependency-groups]
 dev = [
     "pytest>=8",
