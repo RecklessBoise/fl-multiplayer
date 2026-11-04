@@ -268,14 +268,14 @@ class TestValidation:
 
 
 async def test_rate_limit(server, clients):
-    a, b, _pa, _pb = await pair(server, clients, rate_per_second=20, rate_burst=5)
+    a, b, _pa, _pb = await pair(server, clients, rate_per_second=20, rate_burst=10)
     for v in range(30):
         await a.send(type="change", kind="mix_vol", index=1, value=v)
     got = []
     try:
         while True:
             got.append(await asyncio.wait_for(b.recv_type("change"), 0.3))
-    except asyncio.TimeoutError:
+    except TimeoutError:
         pass
     assert 5 <= len(got) < 30
     assert (await a.recv_type("error"))["code"] == "rate_limited"

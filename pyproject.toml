@@ -11,6 +11,9 @@ dependencies = [
     "websockets>=13",
 ]
 
+[project.scripts]
+flmp-server = "flmp_server.__main__:main"
+
 [dependency-groups]
 dev = [
     "pytest>=8",
@@ -42,4 +45,4 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "ANN", "RUF", "SIM"]
 ignore = ["ANN401"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "ANN"]
+"tests/**" = ["S101", "S105", "S106", "ANN"]
