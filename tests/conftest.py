@@ -11,8 +11,9 @@ TIMEOUT = 2.0
 
 
 class Client:
-    def __init__(self, ws):
+    def __init__(self, ws, url=None):
         self.ws = ws
+        self.url = url
 
     async def send(self, **msg):
         await self.ws.send(json.dumps(msg))
@@ -57,7 +58,7 @@ async def clients():
     async def make(url):
         ws = await connect(url)
         opened.append(ws)
-        return Client(ws)
+        return Client(ws, url)
 
     yield make
     for ws in opened:

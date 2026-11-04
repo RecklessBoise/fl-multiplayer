@@ -71,10 +71,15 @@ async def test_snapshot_flow(server, clients):
     a, b = await clients(url), await clients(url)
     pa = (await a.join())["peer"]
     pb = (await b.join(name="Bob"))["peer"]
-    assert await a.recv_type("snapshot_request") == {"type": "snapshot_request", "for": pb}
+    assert await a.recv_type("snapshot_request") == {
+        "type": "snapshot_request",
+        "for": pb,
+        "base_seq": 0,
+    }
     changes = [["mix_vol", 1, 50], ["tempo", None, 90000]]
     await a.send(type="snapshot", changes=changes, **{"for": pb})
     snap = await b.recv_type("snapshot")
+    assert snap["base_seq"] == 0
     assert snap["from"] == pa
     assert snap["changes"] == changes
     assert isinstance(snap["seq"], int)
@@ -134,7 +139,7 @@ class TestSecret:
         url = await server()
         a, b, c = await clients(url), await clients(url), await clients(url)
         await a.join(secret="s3cret-value")
-        assert (await b.join(name="Bob", secret="nope"))["code"] == "bad_secret"
+        assert (await b.join(name="Bob", secret="nope-nope-nope"))["code"] == "bad_secret"
         assert (await c.join(name="Carl"))["code"] == "bad_secret"
         with pytest.raises(ConnectionClosed):
             await b.recv()
@@ -237,3 +242,67 @@ async def test_empty_room_is_deleted(server, clients):
     b = await clients(url)
     # The room was recreated, so a different secret is accepted.
     assert (await b.join(secret="other-secret"))["type"] == "welcome"
+
+
+class TestAbuse:
+    async def test_hello_spam_does_not_extend_join_timeout(self, server, clients):
+        c = await clients(await server(join_timeout=0.3))
+        with pytest.raises(ConnectionClosed):
+            for _ in range(100):
+                await c.send(type="hello")
+                await asyncio.sleep(0.05)
+
+    async def test_connections_per_ip_are_capped(self, server, clients):
+        url = await server(max_connections_per_ip=2)
+        a, b, c = await clients(url), await clients(url), await clients(url)
+        await a.join()
+        await b.join(name="Bob")
+        with pytest.raises(ConnectionClosed):
+            await c.join(name="Carl")
+
+    async def test_failed_joins_are_throttled_per_ip(self, server, clients):
+        url = await server(max_failed_joins_per_ip=2)
+        owner = await clients(url)
+        await owner.join(secret="the-right-secret")
+        for _ in range(2):
+            c = await clients(url)
+            assert (await c.join(name="X", secret="wrong-guess"))["code"] == "bad_secret"
+        late = await clients(url)
+        reply = await late.join(name="Y", secret="the-right-secret")
+        assert reply["code"] == "too_many_attempts"
+
+    async def test_room_creation_is_capped_per_ip(self, server, clients):
+        url = await server(max_rooms_per_ip=2)
+        a, b, c = await clients(url), await clients(url), await clients(url)
+        await a.join(room="ROOMA")
+        await b.join(room="ROOMB")
+        assert (await c.join(room="ROOMC"))["code"] == "too_many_rooms"
+
+    async def test_short_secret_is_refused(self, server, clients):
+        c = await clients(await server())
+        assert (await c.join(secret="short"))["code"] == "bad_secret_format"
+
+
+async def test_snapshot_base_seq_reflects_changes_before_request(server, clients):
+    a, b, _pa, _pb = await pair(server, clients)
+    await a.send(type="change", kind="stop", index=None, value=0)
+    await a.recv_type("change")
+    c = await clients(a.url)
+    pc = (await c.join(name="Carl"))["peer"]
+    req = await a.recv_type("snapshot_request")
+    assert req == {"type": "snapshot_request", "for": pc, "base_seq": 1}
+
+
+async def test_responder_is_never_a_peer_still_waiting_for_its_own_snapshot(server, clients):
+    url = await server()
+    a, b, c = await clients(url), await clients(url), await clients(url)
+    await a.join(name="A")
+    await b.join(name="B")
+    await c.join(name="C")
+    await a.recv_type("snapshot_request")
+    await a.recv_type("snapshot_request")
+    await a.ws.close()  # A leaves before answering B and C, who both still wait
+    for waiting in (b, c):
+        assert (await waiting.recv_type("error"))["code"] == "snapshot_unavailable"
+    await b.nothing()
+    await c.nothing()
