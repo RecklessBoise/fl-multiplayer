@@ -11,6 +11,8 @@ build/
 .env
 .env.*
 !.env.example
+*.pem
+*.key
 .DS_Store
 .claude/
 .idea/
