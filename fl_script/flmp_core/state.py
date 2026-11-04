@@ -51,8 +51,19 @@ class StateTracker:
         """Context manager: values read inside it update state silently."""
         return _Suppress(self)
 
+    def knows(self, key: tuple[str, int | None]) -> bool:
+        """True if `key` exists in the local project as of the last diff.
+
+        Callers must check this BEFORE writing a remote value to FL: a write
+        for an unknown key would be untracked and echoed by the next diff.
+        """
+        return key in self._known
+
     def apply_remote(self, change: Change) -> bool:
         """Record a network value that was just written to FL.
+
+        Note: a fast toggle of an exact kind (mute/solo) back and forth inside
+        the confirm window is not reported; only the value at expiry counts.
 
         Returns False (and records nothing) for a key that does not exist in
         the local project, so peers cannot grow our state with bogus indexes.

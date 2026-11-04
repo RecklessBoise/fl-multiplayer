@@ -66,7 +66,9 @@ class Throttle:
         return min(self._last[k][0] for k in self._pending) + self._interval
 
     def discard(self, key: tuple[str, int | None]) -> None:
+        """Forget `key` entirely: its next local move goes out immediately."""
         self._pending.pop(key, None)
+        self._last.pop(key, None)
 
     def clear(self) -> None:
         self._pending.clear()
