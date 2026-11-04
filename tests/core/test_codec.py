@@ -33,9 +33,11 @@ class TestPackUint:
         with pytest.raises(ValueError):
             pack_uint(value, 1)
 
-    @pytest.mark.parametrize("value", [0, 1, 300, 16383, 2_000_000, 2**28 - 1])
-    def test_roundtrip(self, value):
-        nbytes = 4
+    @pytest.mark.parametrize(
+        ("value", "nbytes"),
+        [(0, 1), (127, 1), (300, 2), (16383, 2), (2_000_000, 3), (2**28 - 1, 4)],
+    )
+    def test_roundtrip(self, value, nbytes):
         assert unpack_uint(pack_uint(value, nbytes)) == value
 
     def test_unpack_rejects_8_bit_byte(self):
@@ -51,6 +53,10 @@ class TestUnitScaling:
     @pytest.mark.parametrize(("x", "expected"), [(-0.2, 0), (1.7, U14_MAX)])
     def test_unit_is_clamped(self, x, expected):
         assert unit_to_u14(x) == expected
+
+    def test_nan_maps_to_zero(self):
+        assert unit_to_u14(float("nan")) == 0
+        assert pan_to_u14(float("nan")) == 0
 
     def test_u14_to_unit_roundtrip_within_one_step(self):
         for x in (0.0, 0.123, 0.8, 1.0):

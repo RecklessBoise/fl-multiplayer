@@ -24,6 +24,11 @@ def test_core_imports_nothing_but_itself_and_future():
     assert {k: v for k, v in offenders.items() if v} == {}
 
 
+def test_core_parses_as_python_37():
+    for p in CORE.glob("*.py"):
+        ast.parse(p.read_text(encoding="utf-8"), filename=p.name, feature_version=(3, 7))
+
+
 def test_core_has_no_print_or_open_calls():
     for p in CORE.glob("*.py"):
         for node in ast.walk(ast.parse(p.read_text(encoding="utf-8"))):

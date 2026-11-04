@@ -66,3 +66,48 @@ def test_next_deadline():
 def test_invalid_rate():
     with pytest.raises(ValueError):
         Throttle(max_per_second=0)
+
+
+def test_flush_at_next_deadline_always_sends():
+    th = Throttle(max_per_second=30)
+    th.offer(vol(1), now=0.1)
+    th.offer(vol(2), now=0.11)
+    assert th.flush(now=th.next_deadline()) == [vol(2)]
+
+
+def test_discard_drops_pending_value():
+    # A remote value applied locally must not be overwritten by a stale pending drag.
+    th = Throttle(max_per_second=30)
+    th.offer(vol(1), now=0.0)
+    th.offer(vol(2), now=0.01)
+    th.discard(vol(0).key)
+    assert th.flush(now=1.0) == []
+
+
+def test_clear_drops_everything():
+    th = Throttle(max_per_second=30)
+    th.offer(vol(1), now=0.0)
+    th.offer(vol(2), now=0.01)
+    th.clear()
+    assert th.flush(now=1.0) == []
+    assert th.offer(vol(3), now=1.0) == [vol(3)]
+
+
+def test_pending_equal_to_last_sent_is_dropped():
+    th = Throttle(max_per_second=30)
+    th.offer(vol(1), now=0.0)
+    th.offer(vol(2), now=0.01)
+    th.offer(vol(1), now=0.02)
+    assert th.flush(now=1.0) == []
+
+
+def test_clock_going_backwards_does_not_stick():
+    th = Throttle(max_per_second=30)
+    th.offer(vol(1), now=100.0)
+    assert th.offer(vol(2), now=5.0) == [vol(2)]
+
+
+def test_nan_time_is_rejected():
+    th = Throttle(max_per_second=30)
+    with pytest.raises(ValueError):
+        th.offer(vol(1), now=float("nan"))

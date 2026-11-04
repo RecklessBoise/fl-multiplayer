@@ -86,6 +86,24 @@ def test_decode_rejects_malformed(raw):
         decode(raw)
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [
+        None,
+        42,
+        "\xf0\x7d\x01\x02\xf7",
+        {"a": 1},
+        [0xF0, 0x7D, 1, 0x30, 0, 1.5, 0xF7],  # float data byte
+        [0xF0, 0x7D, 1, 0x30, 0, "1", 0xF7],  # str data byte
+        [0xF0, 0x7D, True, 0x02, 0xF7],  # bool is not a byte
+        bytes([0xF0, 0x7D, 1, 0x10] + [0] * 60 + [0xF7]),  # oversized
+    ],
+)
+def test_decode_never_raises_anything_but_protocol_error(raw):
+    with pytest.raises(ProtocolError):
+        decode(raw)
+
+
 def test_decode_accepts_list_of_ints():
     raw = list(encode(Change("pattern", None, 5)))
     assert decode(raw) == Change("pattern", None, 5)
