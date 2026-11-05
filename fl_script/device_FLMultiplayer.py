@@ -51,6 +51,7 @@ class FLAdapter:
         # mutes as they were before it, so only the solo itself is sent.
         self._mutes = {}
         self._frozen_mutes = None
+        self._held_mutes = {}  # mutes received during a solo, applied after it
 
     def is_playing(self):
         return bool(transport.isPlaying())
@@ -99,8 +100,12 @@ class FLAdapter:
     def _read_mutes(self, state, tracks, any_solo):
         if any_solo and self._frozen_mutes is None:
             self._frozen_mutes = dict(self._mutes)  # the mutes from before the solo
-        elif not any_solo:
+        elif not any_solo and self._frozen_mutes is not None:
             self._frozen_mutes = None
+            for i, v in self._held_mutes.items():
+                if int(bool(mixer.isTrackMuted(i))) != v:
+                    mixer.muteTrack(i, v)
+            self._held_mutes = {}
         for i in tracks:
             mute = int(bool(mixer.isTrackMuted(i)))
             if self._frozen_mutes is None:
@@ -132,11 +137,14 @@ class FLAdapter:
         elif kind == "mix_pan":
             mixer.setTrackPan(i, u14_to_pan(v), midi.PIM_None)
         elif kind == "mix_mute":
-            # In FL, touching a mute during a solo ends the solo: skip no-op writes.
-            if int(bool(mixer.isTrackMuted(i))) != v:
-                mixer.muteTrack(i, v)
             if self._frozen_mutes is not None:
+                # In FL, touching a mute during a solo ends the solo, and the peer's
+                # unsolo (sent after its mutes) then unmutes everything: hold the
+                # mute until the solo is over.
                 self._frozen_mutes[i] = v
+                self._held_mutes[i] = v
+            elif int(bool(mixer.isTrackMuted(i))) != v:
+                mixer.muteTrack(i, v)
         elif kind == "mix_solo":
             # FL's unsolo unmutes every track, even for a track that is not solo.
             if int(bool(mixer.isTrackSolo(i))) != v:
