@@ -84,3 +84,13 @@ def test_describe_never_prints_raw_server_values():
     msg = {"type": "change", "kind": "mix_vol", "index": 1, "value": "\x1b[2J", "from": "p1"}
     text = describe(msg, {"p1": "Moi"})
     assert "\x1b" not in text
+
+
+@pytest.mark.parametrize(
+    ("kind", "value"),
+    [("mix_vol", 10**400), ("ch_pan", -5), ("mix_mute", 7), ("tempo", 10**400), ("play", -1)],
+)
+def test_describe_rejects_out_of_range_values(kind, value):
+    # A hostile server must not crash the monitor or make it print nonsense.
+    msg = {"type": "change", "kind": kind, "index": 1, "value": value, "from": "p1"}
+    assert describe(msg, {"p1": "Moi"}) == "Moi → valeur invalide ignorée"
