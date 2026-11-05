@@ -88,7 +88,15 @@ def test_describe_never_prints_raw_server_values():
 
 @pytest.mark.parametrize(
     ("kind", "value"),
-    [("mix_vol", 10**400), ("ch_pan", -5), ("mix_mute", 7), ("tempo", 10**400), ("play", -1)],
+    [
+        ("mix_vol", 10**400),
+        ("ch_pan", -5),
+        ("mix_mute", 7),
+        ("tempo", 10**400),
+        ("play", -1),
+        ("bogus", 10**5000),
+    ],
+    ids=["huge-vol", "neg-pan", "mute-7", "huge-tempo", "neg-play", "unknown-kind"],
 )
 def test_describe_rejects_out_of_range_values(kind, value):
     # A hostile server must not crash the monitor or make it print nonsense.

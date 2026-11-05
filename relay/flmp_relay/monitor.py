@@ -15,7 +15,7 @@ from typing import Any
 
 from flmp_core import PROTOCOL_VERSION
 from flmp_core.codec import pan_to_u14, u14_to_pan, u14_to_unit, unit_to_u14
-from flmp_core.messages import ProtocolError, parse_fields
+from flmp_core.messages import KINDS, ProtocolError, parse_fields
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
@@ -72,6 +72,20 @@ def parse_command(line: str) -> dict[str, Any] | None:
     return {"kind": change.kind, "index": change.index, "value": change.value}
 
 
+def _valid(kind: object, index: object, value: object) -> bool:
+    """Same range rules as the protocol, so hostile values never reach formatting."""
+    if not isinstance(value, int) or isinstance(value, bool):
+        return False
+    if not isinstance(kind, str) or kind not in KINDS:
+        return False  # the server only relays known kinds
+    has_index = KINDS[kind][1]
+    try:
+        parse_fields(kind, index if has_index else None, value)
+    except (ProtocolError, TypeError):
+        return False
+    return True
+
+
 def _target(kind: object, index: object) -> str | None:
     if not isinstance(kind, str) or not isinstance(index, int) or isinstance(index, bool):
         return None
@@ -97,7 +111,7 @@ def describe(msg: dict[str, Any], names: dict[str, str]) -> str | None:
         sender = msg.get("from")
         who = clean(names.get(sender, "?") if isinstance(sender, str) else "?").strip("'")
         what, value, index = msg.get("kind"), msg.get("value"), msg.get("index")
-        if not isinstance(value, int) or isinstance(value, bool):
+        if not _valid(what, index, value):
             return f"{who} → valeur invalide ignorée"
         if what == "play":
             return f"{who} → lecture depuis le tick {value}"
