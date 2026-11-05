@@ -22,8 +22,9 @@ from websockets.exceptions import ConnectionClosed
 from flmp_relay.bridge import check_server_url, clean
 
 HELP = (
-    "Commandes : play [tick] | stop | tempo <bpm> | mix vol|pan|mute|solo <piste> <valeur> | "
-    "ch vol|pan|mute <channel> <valeur> | quit  (vol 0..1, pan -1..1, mute/solo on|off)"
+    "Commandes : tempo <bpm> | mix vol|pan|mute|solo <piste> <valeur> | "
+    "ch vol|pan|mute <channel> <valeur> | quit  (vol 0..1, pan -1..1, mute/solo on|off). "
+    "play [tick] / stop simulent un pair v0.1 : FL les ignore depuis la v0.2."
 )
 
 _SECTIONS = {"mix": ("vol", "pan", "mute", "solo"), "ch": ("vol", "pan", "mute")}

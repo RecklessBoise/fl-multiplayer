@@ -1,5 +1,9 @@
 # Test manuel — étape 4 : transport et tempo
 
+> **Obsolète depuis la v0.2 pour la lecture :** la lecture, l'arrêt et la position ne sont plus
+> synchronisés (chacun reste libre). Les cases B1, B2, B5 à B7 et C1 ne s'appliquent plus ; le
+> tempo (B3, B4, C2, C3), l'installation (A) et la reconnexion (B9) restent valables.
+
 But : vérifier **dans FL Studio** ce que les tests automatiques ne peuvent pas prouver. Notez
 le résultat de chaque case (✅ / ❌ + ce que vous avez vu) et renvoyez-moi la liste.
 
