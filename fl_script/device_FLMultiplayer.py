@@ -34,7 +34,7 @@ SONGLENGTH_ABSTICKS = 2  # getSongPos/setSongPos mode: absolute ticks
 SONG_POS_MODE_API = 3  # the `mode` argument exists since API version 3
 MUTE_API = 2  # mixer.isTrackMuted / muteTrack
 GLOBAL_INDEX_API = 33  # channels.*(useGlobalIndex=True); channel sync needs it
-VERSION = "0.1.0-dev"
+VERSION = "0.1.0"
 
 
 def _log(text):

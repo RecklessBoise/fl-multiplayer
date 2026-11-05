@@ -1,0 +1,12 @@
+# Render Blueprint for the FL Multiplayer room server (free plan).
+# Render gives the service an https:// address; use it as wss://<name>.onrender.com
+# The proxy-header trust setting is deliberately NOT enabled here: Render's X-Forwarded-For can be spoofed,
+# so per-IP limits apply to Render's proxy addresses (see docs/DEPLOIEMENT.md).
+services:
+  - type: web
+    name: fl-multiplayer
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    autoDeploy: false

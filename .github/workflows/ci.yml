@@ -36,3 +36,39 @@ jobs:
         run: uv run ruff format --check .
       - name: Tests
         run: uv run pytest --cov=flmp_core --cov=flmp_relay --cov=flmp_server --cov-report=term-missing
+
+  server-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the server image
+        run: docker build -t flmp-server:ci .
+      - name: Start it
+        run: docker run -d --name flmp -p 8080:8080 flmp-server:ci
+      - name: Health check
+        run: |
+          for i in $(seq 1 20); do
+            curl -fsS http://127.0.0.1:8080/healthz && exit 0
+            sleep 1
+          done
+          docker logs flmp
+          exit 1
+      - name: Join a room over WebSocket
+        run: |
+          docker exec flmp python -c '
+          import asyncio, json
+          from websockets.asyncio.client import connect
+          async def main():
+              async with connect("ws://127.0.0.1:8080") as ws:
+                  await ws.send(json.dumps({"type": "join", "room": "SMOKE1", "name": "ci", "proto": 1}))
+                  reply = json.loads(await ws.recv())
+                  assert reply["type"] == "welcome", reply
+          asyncio.run(main())
+          '
+      - name: Runs as non-root, without MIDI libraries
+        run: |
+          test "$(docker exec flmp id -u)" != "0"
+          ! docker exec flmp python -c "import mido"
