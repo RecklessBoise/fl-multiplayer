@@ -85,6 +85,18 @@ class TestMain:
         assert code == 1
         assert "flmp doctor" in capsys.readouterr().err
 
+    def test_join_passes_virtual_to_midi(self, monkeypatch):
+        seen = {}
+
+        def capture(*a, **k):
+            seen.update(k)
+            raise MidiPortError("stop")
+
+        monkeypatch.setattr(cli.MidoMidiIO, "open", capture)
+        argv = ["join", "--server", "ws://localhost:1", "--room", "ABCD", "--name", "A"]
+        assert cli.main([*argv, "--virtual"]) == 1
+        assert seen.get("virtual") is True
+
     def test_join_with_bad_url_exits_2(self, capsys):
         code = cli.main(["join", "--server", "ws://example.org", "--room", "ABCD", "--name", "A"])
         assert code == 2
