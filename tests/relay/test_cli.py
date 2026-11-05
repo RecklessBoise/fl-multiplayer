@@ -21,6 +21,13 @@ class TestArgs:
         assert (args.server, args.room, args.name) == ("wss://x.org", "abcd", "Al")
         assert args.in_port == "FLMP Out" and args.out_port == "FLMP In"
         assert cli.read_secret(args) is None
+        assert args.virtual is False
+
+    def test_join_virtual_flag(self):
+        args = cli.parse_args(
+            ["join", "--server", "wss://x.org", "--room", "abcd", "--name", "Al", "--virtual"]
+        )
+        assert args.virtual is True
 
     def test_secret_from_env(self, monkeypatch):
         monkeypatch.setenv(cli.SECRET_ENV, "from-env")
@@ -78,6 +85,18 @@ class TestMain:
         assert code == 1
         assert "flmp doctor" in capsys.readouterr().err
 
+    def test_join_passes_virtual_to_midi(self, monkeypatch):
+        seen = {}
+
+        def capture(*a, **k):
+            seen.update(k)
+            raise MidiPortError("stop")
+
+        monkeypatch.setattr(cli.MidoMidiIO, "open", capture)
+        argv = ["join", "--server", "ws://localhost:1", "--room", "ABCD", "--name", "A"]
+        assert cli.main([*argv, "--virtual"]) == 1
+        assert seen.get("virtual") is True
+
     def test_join_with_bad_url_exits_2(self, capsys):
         code = cli.main(["join", "--server", "ws://example.org", "--room", "ABCD", "--name", "A"])
         assert code == 2
@@ -86,3 +105,54 @@ class TestMain:
     def test_doctor_exit_code(self, ports, capsys):
         assert cli.main(["doctor"]) == 0
         assert "OK" in capsys.readouterr().out
+
+
+class TestInstallScript:
+    def test_copies_script_and_core_package(self, tmp_path):
+        dest = tmp_path / "FL Multiplayer"
+        assert cli.main(["install-script", "--dest", str(dest)]) == 0
+        script = dest / "device_FLMultiplayer.py"
+        assert script.read_text(encoding="utf-8").startswith("# name=FL Multiplayer")
+        assert (dest / "flmp_core" / "controller.py").is_file()
+        assert not list(dest.rglob("__pycache__"))
+
+    def test_reinstall_replaces_old_core_but_keeps_other_files(self, tmp_path):
+        dest = tmp_path / "FL Multiplayer"
+        (dest / "flmp_core").mkdir(parents=True)
+        (dest / "flmp_core" / "stale.py").write_text("old")
+        (dest / "notes.txt").write_text("mine")
+        assert cli.main(["install-script", "--dest", str(dest)]) == 0
+        assert not (dest / "flmp_core" / "stale.py").exists()
+        assert (dest / "notes.txt").read_text() == "mine"
+
+    def test_default_destination_is_fl_hardware_folder(self):
+        assert cli.default_script_dir().parts[-5:] == (
+            "Image-Line",
+            "FL Studio",
+            "Settings",
+            "Hardware",
+            "FL Multiplayer",
+        )
+
+
+class TestInstallScriptSafety:
+    def test_refuses_unexpected_destination_without_force(self, tmp_path):
+        dest = tmp_path / "Documents"
+        (dest / "flmp_core").mkdir(parents=True)
+        (dest / "flmp_core" / "precious.txt").write_text("keep me")
+        assert cli.main(["install-script", "--dest", str(dest)]) == 1
+        assert (dest / "flmp_core" / "precious.txt").read_text() == "keep me"
+
+    def test_force_allows_other_destination(self, tmp_path):
+        dest = tmp_path / "Elsewhere"
+        assert cli.main(["install-script", "--dest", str(dest), "--force"]) == 0
+        assert (dest / "device_FLMultiplayer.py").is_file()
+
+    def test_refuses_symlinked_script(self, tmp_path):
+        dest = tmp_path / "FL Multiplayer"
+        dest.mkdir()
+        target = tmp_path / "victim.txt"
+        target.write_text("original")
+        (dest / "device_FLMultiplayer.py").symlink_to(target)
+        assert cli.main(["install-script", "--dest", str(dest)]) == 1
+        assert target.read_text() == "original"

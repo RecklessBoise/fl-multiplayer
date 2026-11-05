@@ -79,11 +79,11 @@ class FakeOutput:
 def fake_mido(monkeypatch):
     opened = {}
 
-    def open_input(name, callback=None):
+    def open_input(name, callback=None, virtual=False):
         opened["in"] = FakeInput(name, callback)
         return opened["in"]
 
-    def open_output(name):
+    def open_output(name, virtual=False):
         opened["out"] = FakeOutput(name)
         return opened["out"]
 
@@ -115,3 +115,79 @@ def test_mido_io_reports_missing_ports(fake_mido, monkeypatch):
             MidoMidiIO.open("FLMP Out", "FLMP In", loop)
     finally:
         loop.close()
+
+
+def test_mido_io_virtual_ports_need_no_iac(fake_mido, monkeypatch):
+    # No IAC bus at all: the relay creates its own ports, named as FL will see them.
+    monkeypatch.setattr(midi_mod.mido, "get_input_names", list)
+    monkeypatch.setattr(midi_mod.mido, "get_output_names", list)
+    calls = []
+
+    def open_input(name, callback=None, virtual=False):
+        calls.append(("in", name, virtual))
+        fake_mido["in"] = FakeInput(name, callback)
+        return fake_mido["in"]
+
+    def open_output(name, virtual=False):
+        calls.append(("out", name, virtual))
+        fake_mido["out"] = FakeOutput(name)
+        return fake_mido["out"]
+
+    monkeypatch.setattr(midi_mod.mido, "open_input", open_input)
+    monkeypatch.setattr(midi_mod.mido, "open_output", open_output)
+    loop = asyncio.new_event_loop()
+    try:
+        io = MidoMidiIO.open("FLMP Out", "FLMP In", loop, virtual=True)
+    finally:
+        loop.close()
+    assert calls == [("in", "FLMP Out", True), ("out", "FLMP In", True)]
+    io.close()
+
+
+def _no_ports(monkeypatch):
+    monkeypatch.setattr(midi_mod.mido, "get_input_names", list)
+    monkeypatch.setattr(midi_mod.mido, "get_output_names", list)
+
+
+def test_virtual_ports_unsupported_give_a_clear_error(fake_mido, monkeypatch):
+    _no_ports(monkeypatch)
+
+    def no_virtual(name, callback=None, virtual=False):
+        raise NotImplementedError("virtual ports are not supported")
+
+    monkeypatch.setattr(midi_mod.mido, "open_input", no_virtual)
+    loop = asyncio.new_event_loop()
+    try:
+        with pytest.raises(MidiPortError, match="--virtual"):
+            MidoMidiIO.open("FLMP Out", "FLMP In", loop, virtual=True)
+    finally:
+        loop.close()
+
+
+def test_virtual_output_failure_closes_the_input(fake_mido, monkeypatch):
+    _no_ports(monkeypatch)
+
+    def broken(name, virtual=False):
+        raise RuntimeError("backend error")
+
+    monkeypatch.setattr(midi_mod.mido, "open_output", broken)
+    loop = asyncio.new_event_loop()
+    try:
+        with pytest.raises(MidiPortError):
+            MidoMidiIO.open("FLMP Out", "FLMP In", loop, virtual=True)
+    finally:
+        loop.close()
+    assert fake_mido["in"].closed
+
+
+def test_virtual_refuses_a_name_already_taken(fake_mido, monkeypatch):
+    # Another program already offers "FLMP In": FL could end up talking to it.
+    monkeypatch.setattr(midi_mod.mido, "get_input_names", list)
+    monkeypatch.setattr(midi_mod.mido, "get_output_names", lambda: ["FLMP In"])
+    loop = asyncio.new_event_loop()
+    try:
+        with pytest.raises(MidiPortError, match="existe déjà"):
+            MidoMidiIO.open("FLMP Out", "FLMP In", loop, virtual=True)
+    finally:
+        loop.close()
+    assert "in" not in fake_mido

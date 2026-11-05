@@ -9,9 +9,13 @@ import getpass
 import json
 import logging
 import os
+import shutil
 import sys
 from collections.abc import Callable
+from importlib import resources
+from pathlib import Path
 
+import flmp_core
 import mido
 from websockets.asyncio.client import connect
 
@@ -47,13 +51,93 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=f"demander le mot de passe du salon (sinon variable {SECRET_ENV})",
     )
     join.add_argument("--insecure", action="store_true", help="autoriser ws:// hors localhost")
+    join.add_argument(
+        "--virtual",
+        action="store_true",
+        help="créer soi-même les ports « FLMP In » / « FLMP Out », sans bus IAC (macOS, Linux)",
+    )
     ports(join)
+
+    mon = sub.add_parser("monitor", help="faux participant pour tester avec un seul FL")
+    mon.add_argument("--server", required=True, help="adresse du serveur")
+    mon.add_argument("--room", required=True, help="code du salon")
+    mon.add_argument("--name", default="Moniteur", help="pseudo affiché (Moniteur)")
+    mon.add_argument("--insecure", action="store_true", help="autoriser ws:// hors localhost")
+
+    install = sub.add_parser("install-script", help="installer le script dans FL Studio")
+    install.add_argument(
+        "--dest",
+        type=Path,
+        default=None,
+        help="dossier cible (par défaut : dossier Hardware de FL)",
+    )
+    install.add_argument(
+        "--force",
+        action="store_true",
+        help="accepter un dossier cible d'un autre nom",
+    )
 
     doctor = sub.add_parser("doctor", help="vérifier l'installation")
     doctor.add_argument("--server", help="adresse du serveur à tester (optionnel)")
     doctor.add_argument("--insecure", action="store_true", help="autoriser ws:// hors localhost")
     ports(doctor)
     return parser.parse_args(argv)
+
+
+SCRIPT_NAME = "device_FLMultiplayer.py"
+
+
+def default_script_dir() -> Path:
+    return (
+        Path.home()
+        / "Documents"
+        / "Image-Line"
+        / "FL Studio"
+        / "Settings"
+        / "Hardware"
+        / "FL Multiplayer"
+    )
+
+
+def _script_source() -> Path:
+    """The FL script shipped in the wheel, or the one in a source checkout."""
+    packaged = resources.files("flmp_relay") / "fl_script" / SCRIPT_NAME
+    if packaged.is_file():
+        return Path(str(packaged))
+    return Path(flmp_core.__file__).resolve().parent.parent / SCRIPT_NAME
+
+
+EXPECTED_DIR_NAME = "FL Multiplayer"
+
+
+def install_script(dest: Path, force: bool = False) -> Path:
+    """Copy the FL script and its flmp_core package into `dest`.
+
+    Only a folder named "FL Multiplayer" is accepted unless `force`, because an
+    existing `flmp_core` folder in `dest` is replaced. Symlinks are refused, and
+    the new package is copied next to the old one before being swapped in.
+    """
+    if dest.name != EXPECTED_DIR_NAME and not force:
+        raise OSError(
+            f"le dossier cible doit s'appeler « {EXPECTED_DIR_NAME} » (ou utilisez --force)"
+        )
+    source = _script_source()
+    core = Path(flmp_core.__file__).resolve().parent
+    script_target = dest / SCRIPT_NAME
+    target_core = dest / "flmp_core"
+    for path in (dest, script_target, target_core):
+        if path.is_symlink():
+            raise OSError(f"{path} est un lien symbolique : refus de l'écraser")
+    dest.mkdir(parents=True, exist_ok=True)
+    staging = dest / "flmp_core.new"
+    if staging.exists():
+        shutil.rmtree(staging)
+    shutil.copytree(core, staging, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    if target_core.exists():
+        shutil.rmtree(target_core)
+    staging.rename(target_core)
+    shutil.copyfile(source, script_target)
+    return dest
 
 
 def read_secret(args: argparse.Namespace) -> str | None:
@@ -125,7 +209,7 @@ async def doctor(
 
 async def _join(args: argparse.Namespace, secret: str | None) -> None:
     loop = asyncio.get_running_loop()
-    midi = MidoMidiIO.open(args.in_port, args.out_port, loop)
+    midi = MidoMidiIO.open(args.in_port, args.out_port, loop, virtual=args.virtual)
     try:
         relay = Relay(midi, args.server, args.room, args.name, secret, allow_insecure=args.insecure)
         await relay.run()
@@ -140,6 +224,28 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(message)s",
         datefmt="%H:%M:%S",
     )
+    if args.command == "monitor":
+        from flmp_relay.monitor import monitor
+
+        try:
+            with contextlib.suppress(KeyboardInterrupt):
+                asyncio.run(monitor(args.server, args.room, args.name, args.insecure))
+        except (ValueError, OSError) as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        return 0
+    if args.command == "install-script":
+        dest = args.dest or default_script_dir()
+        try:
+            install_script(dest, force=args.force)
+        except OSError as exc:
+            print(f"Installation impossible : {exc}", file=sys.stderr)
+            return 1
+        print(f"Script installé dans : {dest}")
+        print(
+            "Redémarrez FL Studio, puis choisissez « FL Multiplayer » dans Options > MIDI settings."
+        )
+        return 0
     if args.command == "doctor":
         good = asyncio.run(doctor(args.server, args.in_port, args.out_port, print, args.insecure))
         return 0 if good else 1
