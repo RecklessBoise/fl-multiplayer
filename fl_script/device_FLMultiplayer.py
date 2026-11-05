@@ -46,11 +46,11 @@ class FLAdapter:
 
     def __init__(self):
         self.api = general.getVersion()
-        # While a track is solo, FL mutes the others. Those are not user mutes: report
-        # the mutes as they were before the solo, so only the solo itself is sent.
+        # Observed in FL 2026: solo mutes the other inserts and unsolo unmutes every
+        # track. The solo mutes are not user mutes: while a track is solo, report the
+        # mutes as they were before it, so only the solo itself is sent.
         self._mutes = {}
         self._frozen_mutes = None
-        self._solo_remote_mutes = {}  # mutes received while a solo was active
 
     def is_playing(self):
         return bool(transport.isPlaying())
@@ -99,8 +99,8 @@ class FLAdapter:
     def _read_mutes(self, state, tracks, any_solo):
         if any_solo and self._frozen_mutes is None:
             self._frozen_mutes = dict(self._mutes)  # the mutes from before the solo
-        elif not any_solo and self._frozen_mutes is not None:
-            self._end_solo()
+        elif not any_solo:
+            self._frozen_mutes = None
         for i in tracks:
             mute = int(bool(mixer.isTrackMuted(i)))
             if self._frozen_mutes is None:
@@ -110,14 +110,6 @@ class FLAdapter:
                 # current value may be a solo mute, so assume unmuted.
                 mute = self._frozen_mutes.setdefault(i, 0)
             state[("mix_mute", i)] = mute
-
-    def _end_solo(self):
-        # FL may restore the pre-solo mutes and lose those received during the solo.
-        for i, v in self._solo_remote_mutes.items():
-            if int(bool(mixer.isTrackMuted(i))) != v:
-                mixer.muteTrack(i, v)
-        self._solo_remote_mutes = {}
-        self._frozen_mutes = None
 
     def _global(self):
         # Global indexes don't depend on the channel group shown in the rack.
@@ -140,12 +132,15 @@ class FLAdapter:
         elif kind == "mix_pan":
             mixer.setTrackPan(i, u14_to_pan(v), midi.PIM_None)
         elif kind == "mix_mute":
-            mixer.muteTrack(i, v)
+            # In FL, touching a mute during a solo ends the solo: skip no-op writes.
+            if int(bool(mixer.isTrackMuted(i))) != v:
+                mixer.muteTrack(i, v)
             if self._frozen_mutes is not None:
-                self._frozen_mutes[i] = v  # a solo is active: this mute is the real one
-                self._solo_remote_mutes[i] = v
+                self._frozen_mutes[i] = v
         elif kind == "mix_solo":
-            mixer.soloTrack(i, v)
+            # FL's unsolo unmutes every track, even for a track that is not solo.
+            if int(bool(mixer.isTrackSolo(i))) != v:
+                mixer.soloTrack(i, v)
         elif kind in ("ch_vol", "ch_pan", "ch_mute") and self._global():
             self._apply_channel(kind, i, v)
         else:
