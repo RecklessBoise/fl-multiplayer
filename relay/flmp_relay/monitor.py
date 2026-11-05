@@ -9,17 +9,44 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import math
 import sys
 from typing import Any
 
 from flmp_core import PROTOCOL_VERSION
+from flmp_core.codec import pan_to_u14, u14_to_pan, u14_to_unit, unit_to_u14
 from flmp_core.messages import ProtocolError, parse_fields
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
 from flmp_relay.bridge import check_server_url, clean
 
-HELP = "Commandes : play [tick] | stop | tempo <bpm> | quit"
+HELP = (
+    "Commandes : play [tick] | stop | tempo <bpm> | mix vol|pan|mute|solo <piste> <valeur> | "
+    "ch vol|pan|mute <channel> <valeur> | quit  (vol 0..1, pan -1..1, mute/solo on|off)"
+)
+
+_SECTIONS = {"mix": ("vol", "pan", "mute", "solo"), "ch": ("vol", "pan", "mute")}
+
+
+def _wire_value(field: str, raw: str) -> int | None:
+    if field in ("mute", "solo"):
+        return {"on": 1, "off": 0}.get(raw)
+    x = float(raw)
+    low = -1.0 if field == "pan" else 0.0
+    if not math.isfinite(x) or not low <= x <= 1.0:
+        return None
+    return pan_to_u14(x) if field == "pan" else unit_to_u14(x)
+
+
+def _parse_indexed(parts: list[str]) -> tuple[str, int, int] | None:
+    section, field = parts[0], parts[1]
+    if field not in _SECTIONS[section]:
+        return None
+    value = _wire_value(field, parts[3])
+    if value is None:
+        return None
+    return f"{section}_{field}", int(parts[2]), value
 
 
 def parse_command(line: str) -> dict[str, Any] | None:
@@ -33,11 +60,35 @@ def parse_command(line: str) -> dict[str, Any] | None:
             change = parse_fields("stop", None, 0)
         elif parts[0] == "tempo" and len(parts) == 2:
             change = parse_fields("tempo", None, round(float(parts[1]) * 1000))
+        elif parts[0] in _SECTIONS and len(parts) == 4:
+            fields = _parse_indexed(parts)
+            if fields is None:
+                return None
+            change = parse_fields(*fields)
         else:
             return None
     except (ValueError, ProtocolError):
         return None
     return {"kind": change.kind, "index": change.index, "value": change.value}
+
+
+def _target(kind: object, index: object) -> str | None:
+    if not isinstance(kind, str) or not isinstance(index, int) or isinstance(index, bool):
+        return None
+    if kind in ("mix_vol", "mix_pan", "mix_mute", "mix_solo"):
+        return f"mixer piste {index}"
+    if kind in ("ch_vol", "ch_pan", "ch_mute"):
+        return f"channel {index}"
+    return None
+
+
+def _shown_value(kind: str, value: int) -> str:
+    field = kind.split("_", 1)[1]
+    if field == "vol":
+        return f"volume {u14_to_unit(value) * 100:.1f} %"
+    if field == "pan":
+        return f"pan {round(u14_to_pan(value) * 100)} %"
+    return f"{field} {'activé' if value else 'désactivé'}"
 
 
 def describe(msg: dict[str, Any], names: dict[str, str]) -> str | None:
@@ -54,6 +105,9 @@ def describe(msg: dict[str, Any], names: dict[str, str]) -> str | None:
             return f"{who} → arrêt"
         if what == "tempo":
             return f"{who} → tempo {value / 1000:.3f} BPM"
+        target = _target(what, index)
+        if target is not None:
+            return f"{who} → {target} : {_shown_value(str(what), value)}"
         shown_index = index if isinstance(index, int) else "-"
         return f"{who} → {clean(what)} [{shown_index}] = {value}"
     if kind == "peer_joined":
