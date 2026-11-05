@@ -28,6 +28,7 @@ class FakeFLStudio:
         self.chans = [{"vol": 0.78125, "pan": 0.0, "mute": False} for _ in range(3)]
         self.group = [2, 0]  # group index -> global index
         self.global_calls = []
+        self.hints = []
         self.last_insert = 3
 
     def solo(self, index, on):
@@ -145,6 +146,9 @@ class FakeFLStudio:
 
         general.processRECEvent = process_rec_event
 
+        ui = types.ModuleType("ui")
+        ui.setHintMsg = fl.hints.append
+
         device = types.ModuleType("device")
         device.isAssigned = lambda: fl.assigned
         device.midiOutSysex = lambda message: fl.out.append(decode(message))
@@ -155,6 +159,7 @@ class FakeFLStudio:
             "midi": midi,
             "general": general,
             "device": device,
+            "ui": ui,
         }
 
 
@@ -503,3 +508,16 @@ def test_peer_mute_during_solo_converges(load):
     assert [t["mute"] for t in fl.tracks[:4]] == [False, False, True, True]
     assert not any(t["solo"] for t in fl.tracks)
     assert fl.out == []
+
+
+def test_missing_output_port_is_shown_in_fl_hint_bar(load):
+    fl = FakeFLStudio()
+    fl.assigned = False
+    load(fl)
+    assert any("FLMP Out" in h for h in fl.hints)
+
+
+def test_no_hint_when_output_port_is_linked(load):
+    fl = FakeFLStudio()
+    load(fl)
+    assert fl.hints == []

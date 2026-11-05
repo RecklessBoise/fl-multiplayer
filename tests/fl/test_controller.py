@@ -115,11 +115,11 @@ def test_incoming_snapshot_is_applied_without_echo():
 def test_errors_in_fl_calls_do_not_escape():
     ctl, fl, _out = make()
 
-    def boom(_pos):
+    def boom(_change):
         raise RuntimeError("FL said no")
 
-    fl.play_from = boom
-    assert ctl.on_sysex(encode(Change("play", None, 0))) is True
+    fl.apply = boom
+    assert ctl.on_sysex(encode(Change("tempo", None, 90000))) is True
     assert ctl.last_error is not None
 
 
