@@ -54,6 +54,7 @@ class FLAdapter:
         # the mutes as they were before the solo, so only the solo itself is sent.
         self._mutes = {}
         self._frozen_mutes = None
+        self._solo_remote_mutes = {}  # mutes received while a solo was active
 
     def is_playing(self):
         return bool(transport.isPlaying())
@@ -96,15 +97,25 @@ class FLAdapter:
     def _read_mutes(self, state, any_solo):
         if any_solo and self._frozen_mutes is None:
             self._frozen_mutes = dict(self._mutes)  # the mutes from before the solo
-        elif not any_solo:
-            self._frozen_mutes = None
+        elif not any_solo and self._frozen_mutes is not None:
+            self._end_solo()
         for i in self._tracks:
             mute = int(bool(mixer.isTrackMuted(i)))
             if self._frozen_mutes is None:
                 self._mutes[i] = mute
             else:
-                mute = self._frozen_mutes.setdefault(i, mute)
+                # Unknown before the solo (loaded already solo, or new track): FL's
+                # current value may be a solo mute, so assume unmuted.
+                mute = self._frozen_mutes.setdefault(i, 0)
             state[("mix_mute", i)] = mute
+
+    def _end_solo(self):
+        # FL may restore the pre-solo mutes and lose those received during the solo.
+        for i, v in self._solo_remote_mutes.items():
+            if int(bool(mixer.isTrackMuted(i))) != v:
+                mixer.muteTrack(i, v)
+        self._solo_remote_mutes = {}
+        self._frozen_mutes = None
 
     def _global(self):
         # Global indexes don't depend on the channel group shown in the rack.
@@ -130,6 +141,7 @@ class FLAdapter:
             mixer.muteTrack(i, v)
             if self._frozen_mutes is not None:
                 self._frozen_mutes[i] = v  # a solo is active: this mute is the real one
+                self._solo_remote_mutes[i] = v
         elif kind == "mix_solo":
             mixer.soloTrack(i, v)
         elif kind in ("ch_vol", "ch_pan", "ch_mute") and self._global():

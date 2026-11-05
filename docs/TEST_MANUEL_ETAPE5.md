@@ -45,6 +45,8 @@ il compte le tempo, 4 valeurs par piste du mixer et 3 par channel.
 - [ ] **B8.** `mix mute 3 on`, puis `mix mute 3 off`.
 - [ ] **B9.** `mix solo 1 on` : la piste 1 passe en solo, et le moniteur n'affiche **rien** venant de
   `'Moi'` (ni solo, ni mutes). `mix solo 1 off` : les mutes d'avant reviennent, toujours sans écho.
+- [ ] **B9 bis.** `mix solo 1 on`, puis `mix mute 3 on` pendant le solo, puis `mix solo 1 off` : la
+  piste 3 doit **rester mutée** après le retrait du solo, sans écho.
 - [ ] **B10. Pas d'écho.** Après B6–B8, aucune ligne `'Moi' → …` ne doit revenir pour la valeur que
   vous venez d'envoyer. Attendez 5 s : plus rien ne doit défiler.
 
