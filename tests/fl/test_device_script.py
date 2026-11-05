@@ -28,23 +28,20 @@ class FakeFLStudio:
         self.chans = [{"vol": 0.78125, "pan": 0.0, "mute": False} for _ in range(3)]
         self.group = [2, 0]  # group index -> global index
         self.global_calls = []
-        self._saved_mutes = None
         self.last_insert = 3
 
     def solo(self, index, on):
-        """Like FL: soloing a track mutes the others; unsolo restores them."""
-        if on:
-            if self._saved_mutes is None:
-                self._saved_mutes = [t["mute"] for t in self.tracks]
-            for i, t in enumerate(self.tracks):
-                t["solo"] = i == index
-                t["mute"] = i not in (0, index)
-        else:
-            self.tracks[index]["solo"] = False
-            if self._saved_mutes is not None:
-                for t, m in zip(self.tracks, self._saved_mutes, strict=True):
-                    t["mute"] = m
-                self._saved_mutes = None
+        """FL 2026, as observed: solo mutes every other insert; unsolo (even of a
+        track that is not solo) unmutes every track, whatever was muted before."""
+        for i, t in enumerate(self.tracks):
+            t["solo"] = on and i == index
+            t["mute"] = on and i not in (0, index)
+
+    def mute(self, index, on):
+        """FL 2026, as observed: changing a mute while a track is solo ends the solo."""
+        for t in self.tracks:
+            t["solo"] = False
+        self.tracks[index]["mute"] = on
 
     def modules(self):
         fl = self
@@ -87,7 +84,7 @@ class FakeFLStudio:
 
         def mute_track(index, value=-1):
             assert value in (0, 1)  # never toggle blindly
-            fl.tracks[index]["mute"] = bool(value)
+            fl.mute(index, bool(value))
 
         def solo_track(index, value=-1, mode=-1):
             assert value in (0, 1)
@@ -420,9 +417,9 @@ def test_local_solo_sends_only_the_solo(load):
     script.OnIdle()
     assert fl.out == [Change("mix_solo", 1, 1)]
     fl.out.clear()
-    fl.solo(1, False)  # FL restores the previous mutes
+    fl.solo(1, False)  # FL unmutes everything, including track 2
     script.OnIdle()
-    assert fl.out == [Change("mix_solo", 1, 0)]
+    assert set(fl.out) == {Change("mix_solo", 1, 0), Change("mix_mute", 2, 0)}
 
 
 def test_remote_solo_does_not_echo_mutes(load):
@@ -440,21 +437,9 @@ def test_remote_solo_does_not_echo_mutes(load):
     assert not any(t["mute"] for t in fl.tracks)
 
 
-def test_mute_set_during_solo_is_sent_after_unsolo(load):
-    fl = FakeFLStudio()
-    script = load(fl)
-    fl.solo(1, True)
-    script.OnIdle()
-    fl.out.clear()
-    fl._saved_mutes[2] = True  # user mutes track 2 while track 1 is solo
-    script.OnIdle()
-    assert fl.out == []
-    fl.solo(1, False)
-    script.OnIdle()
-    assert set(fl.out) == {Change("mix_solo", 1, 0), Change("mix_mute", 2, 1)}
-
-
-def test_remote_mute_during_solo_does_not_echo(load):
+def test_remote_mute_already_set_by_solo_keeps_the_solo(load):
+    # In FL, touching a mute during a solo ends the solo: skip a write that
+    # would change nothing.
     fl = FakeFLStudio()
     script = load(fl)
     fl.solo(1, True)
@@ -463,6 +448,18 @@ def test_remote_mute_during_solo_does_not_echo(load):
     script.OnSysEx(Msg(Change("mix_mute", 2, 1)))
     for _ in range(5):
         script.OnIdle()
+    assert fl.tracks[1]["solo"] is True
+    assert fl.out == []
+
+
+def test_remote_unsolo_of_a_track_not_solo_keeps_mutes(load):
+    # FL's unsolo unmutes every track: never send it for a track that isn't solo.
+    fl = FakeFLStudio()
+    fl.tracks[3]["mute"] = True
+    script = load(fl)
+    script.OnSysEx(Msg(Change("mix_solo", 1, 0)))
+    script.OnIdle()
+    assert fl.tracks[3]["mute"] is True
     assert fl.out == []
 
 
@@ -484,23 +481,6 @@ def test_solo_already_active_at_load_sends_no_false_mutes(load):
     script.OnIdle()
     fl.solo(1, False)
     script.OnIdle()
-    assert fl.out == [Change("mix_solo", 1, 0)]
-
-
-def test_remote_mute_during_solo_survives_unsolo(load):
-    # If FL restores the pre-solo mutes on unsolo, the mute received meanwhile
-    # must be put back, and nothing echoed.
-    fl = FakeFLStudio()
-    script = load(fl)
-    fl.solo(1, True)
-    script.OnIdle()
-    fl.out.clear()
-    script.OnSysEx(Msg(Change("mix_mute", 2, 1)))
-    script.OnIdle()
-    fl.solo(1, False)
-    script.OnIdle()
-    script.OnIdle()
-    assert fl.tracks[2]["mute"] is True
     assert fl.out == [Change("mix_solo", 1, 0)]
 
 
