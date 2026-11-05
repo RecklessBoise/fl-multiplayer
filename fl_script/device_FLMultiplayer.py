@@ -46,10 +46,6 @@ class FLAdapter:
 
     def __init__(self):
         self.api = general.getVersion()
-        # Master and inserts only: the "current" track mirrors the selected one.
-        self._tracks = range(
-            mixer.getTrackInfo(midi.TN_Master), mixer.getTrackInfo(midi.TN_LastIns) + 1
-        )
         # While a track is solo, FL mutes the others. Those are not user mutes: report
         # the mutes as they were before the solo, so only the solo itself is sent.
         self._mutes = {}
@@ -83,23 +79,29 @@ class FLAdapter:
         self._read_channels(state)
         return state
 
+    def _track_range(self):
+        # Master and inserts only: the "current" track mirrors the selected one.
+        # Read every time: FL 2026 adds insert tracks on demand.
+        return range(mixer.getTrackInfo(midi.TN_Master), mixer.getTrackInfo(midi.TN_LastIns) + 1)
+
     def _read_mixer(self, state):
+        tracks = self._track_range()
         any_solo = False
-        for i in self._tracks:
+        for i in tracks:
             state[("mix_vol", i)] = unit_to_u14(mixer.getTrackVolume(i))
             state[("mix_pan", i)] = pan_to_u14(mixer.getTrackPan(i))
             solo = int(bool(mixer.isTrackSolo(i)))
             state[("mix_solo", i)] = solo
             any_solo = any_solo or bool(solo)
         if self.api >= MUTE_API:
-            self._read_mutes(state, any_solo)
+            self._read_mutes(state, tracks, any_solo)
 
-    def _read_mutes(self, state, any_solo):
+    def _read_mutes(self, state, tracks, any_solo):
         if any_solo and self._frozen_mutes is None:
             self._frozen_mutes = dict(self._mutes)  # the mutes from before the solo
         elif not any_solo and self._frozen_mutes is not None:
             self._end_solo()
-        for i in self._tracks:
+        for i in tracks:
             mute = int(bool(mixer.isTrackMuted(i)))
             if self._frozen_mutes is None:
                 self._mutes[i] = mute
