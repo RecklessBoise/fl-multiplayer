@@ -17,8 +17,8 @@ F0 7D <version=01> <code> [index : 2 octets] [valeur : n octets] F7
 
 | Nom | Code | Index | Valeur | Unité |
 |---|---|---|---|---|
-| `play` | 0x01 | — | 4 octets (28 bits) | position, ticks absolus |
-| `stop` | 0x02 | — | — | |
+| `play` | 0x01 | — | 4 octets (28 bits) | position, ticks absolus (ignoré par le script FL depuis la v0.2) |
+| `stop` | 0x02 | — | — | ignoré par le script FL depuis la v0.2 |
 | `tempo` | 0x03 | — | 3 octets (21 bits) | BPM × 1000 |
 | `mix_vol` | 0x10 | piste | 14 bits | 0.0–1.0 → 0–16383 |
 | `mix_pan` | 0x11 | piste | 14 bits | -1.0–1.0 → 0–16383 |

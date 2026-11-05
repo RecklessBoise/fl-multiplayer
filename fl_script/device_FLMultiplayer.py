@@ -13,6 +13,7 @@ https://il-group.github.io/FL-Studio-API-Stubs/ are used:
     mixer.getCurrentTempo                                          (API 1)
     general.getVersion / processRECEvent, midi.REC_Tempo           (API 1)
     device.isAssigned / midiOutSysex                               (API 1)
+    ui.setHintMsg                                                  (API 1)
     mixer.getTrackInfo (TN_Master, TN_LastIns), getTrackVolume / setTrackVolume,
         getTrackPan / setTrackPan, isTrackSolo / soloTrack          (API 1)
     mixer.isTrackMuted / muteTrack                                 (API 2)
@@ -26,6 +27,7 @@ import device
 import general
 import midi
 import mixer
+import ui
 
 from flmp_core.codec import pan_to_u14, u14_to_pan, u14_to_unit, unit_to_u14
 from flmp_core.controller import Controller
@@ -175,10 +177,12 @@ def _init():
     _controller = controller
     _log(f"FL Multiplayer {VERSION} chargé (API FL {adapter.api})")
     if not device.isAssigned():
-        _log(
+        warning = (
             "FL Multiplayer : aucune sortie MIDI reliée. Dans Options > MIDI settings, "
             "donnez à « FLMP Out » le même numéro de port que « FLMP In »."
         )
+        _log(warning)
+        ui.setHintMsg(warning)  # also in FL's hint bar, where it is easier to see
 
 
 def OnInit():

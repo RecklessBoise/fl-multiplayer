@@ -3,16 +3,18 @@
 > **Version 0.1.0.** Testé dans FL Studio 2026 (API FL 45) sur macOS, par une seule machine
 > reliée à un faux participant. Le test à deux Mac réels n'a pas encore été fait.
 
-Jouez à deux sur le même projet FL Studio, chacun chez soi : quand l'un lance la lecture, change
-le tempo ou bouge un fader, l'autre voit la même chose dans son FL.
+Jouez à deux sur le même projet FL Studio, chacun chez soi : quand l'un change le tempo ou
+bouge un fader, l'autre voit la même chose dans son FL. Chacun lance et arrête la lecture de son
+côté, quand il veut.
 
 **Ce qui est synchronisé :**
 
-- **Transport :** lecture, arrêt, position de départ, tempo.
+- **Tempo.**
 - **Mixer :** volume, pan, mute et solo de chaque piste.
 - **Channel rack :** volume, pan et mute de chaque channel (FL avec API 33 ou plus).
 
-**Ce qui ne l'est pas :** les notes, la playlist, les plugins, les samples et l'audio. Chacun doit
+**Ce qui ne l'est pas :** la lecture et l'arrêt (chacun reste libre), les notes, la playlist, les
+plugins, les samples et l'audio. Chacun doit
 donc ouvrir **le même projet** (envoyez-vous le fichier `.flp` et les samples avant de commencer).
 
 ```
@@ -45,7 +47,9 @@ Documents. Dans le Terminal, placez-vous dedans (adaptez le nom du dossier si be
 cd ~/Documents/fl-multiplayer-main
 ```
 
-Toutes les commandes qui suivent se tapent depuis ce dossier.
+Toutes les commandes qui suivent se tapent depuis ce dossier. **Chaque nouvelle fenêtre du
+Terminal démarre dans votre dossier personnel** : refaites ce `cd` à chaque fois, sinon `uv`
+répond « Failed to spawn: flmp » ou « No pyproject.toml found ».
 
 ### 3. Installer le script dans FL Studio
 
@@ -117,8 +121,12 @@ numéro, pas par leur nom : ajouter ou déplacer un channel chez l'un décale to
 **Le son passe-t-il par FL Multiplayer ?** Non. Chacun entend son propre FL. Pour vous parler,
 utilisez un appel à côté (Discord, FaceTime…).
 
-**Pourquoi un léger décalage ?** Les messages traversent Internet : comptez souvent 50 à 150 ms.
-La lecture démarre à la même position, mais pas à l'échantillon près.
+**Pourquoi un léger décalage ?** Les messages traversent Internet : comptez souvent 50 à 150 ms
+entre le moment où l'un bouge un réglage et celui où l'autre le voit.
+
+**Le tempo passe dans un sens mais pas dans l'autre.** Chez celui dont les changements ne partent
+pas, la sortie `FLMP Out` n'a pas le même numéro de port que `FLMP In` dans *Options > MIDI
+settings*. FL l'indique aussi dans sa barre d'aide (« aucune sortie MIDI reliée »).
 
 **Le relais affiche « Nouvelle tentative dans … ».** La connexion au serveur est coupée (Internet,
 ou serveur gratuit en veille). Le relais se reconnecte tout seul ; un serveur Render endormi met
@@ -143,10 +151,7 @@ retrait d'un solo démute toutes les pistes. FL Multiplayer reproduit la même c
 
 - Test réel fait sur une seule machine avec un faux participant (`flmp monitor`) ; pas encore à
   deux Mac.
-- Un participant qui arrive reçoit le tempo, le mixer et le channel rack, mais pas l'état de
-  lecture en cours.
-- Juste après une lecture ou un arrêt reçu (moins d'une seconde), un appui local sur lecture ou
-  arrêt peut ne pas être transmis : refaites-le.
+- Un participant qui arrive reçoit le tempo, le mixer et le channel rack.
 - Un mute changé pendant un solo n'est transmis qu'au retrait du solo.
 - Le solo des channels, les sends, les effets et les noms ne sont pas synchronisés.
 - Avant l'API FL 33, le channel rack n'est pas synchronisé.
@@ -185,10 +190,11 @@ Ce projet est indépendant et **n'est ni affilié, ni approuvé, ni soutenu par 
 
 ## English summary
 
-**FL Multiplayer** lets two people work on the same FL Studio project from two Macs: transport
-(play, stop, start position, tempo), mixer (volume, pan, mute, solo per track) and channel rack
-(volume, pan, mute per channel, API 33+) are mirrored in real time over the Internet. Notes,
-playlist, plugins and audio are not synced, so both users open the same project.
+**FL Multiplayer** lets two people work on the same FL Studio project from two Macs: tempo,
+mixer (volume, pan, mute, solo per track) and channel rack (volume, pan, mute per channel,
+API 33+) are mirrored in real time over the Internet. Each user plays and stops on their own:
+the transport is not synced. Notes, playlist, plugins and audio are not synced either, so both
+users open the same project.
 
 An FL Studio MIDI controller script talks SysEx to a local Python relay (`flmp join --virtual`
 creates the MIDI ports itself; IAC buses also work), which connects to a small WebSocket room
