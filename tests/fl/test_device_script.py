@@ -183,37 +183,25 @@ def test_header_names_the_controller_type():
     assert first == "# name=FL Multiplayer"
 
 
-def test_local_play_and_tempo_reach_midi_out(load):
+def test_transport_stays_local(load):
     fl = FakeFLStudio()
     script = load(fl)
     fl.pos = 384
     fl.playing = True
     fl.tempo = 128.5
     script.OnIdle()
-    assert fl.out == [Change("play", None, 384), Change("tempo", None, 128500)]
-
-
-def test_remote_play_sets_position_and_starts_once(load):
-    fl = FakeFLStudio()
-    script = load(fl)
-    msg = Msg(Change("play", None, 1920))
-    script.OnSysEx(msg)
-    assert msg.handled is True
-    assert fl.playing is True and fl.pos == 1920
-    script.OnSysEx(Msg(Change("play", None, 0)))  # already playing: must not toggle to pause
-    assert fl.playing is True
-    script.OnIdle()
-    assert fl.out == []
-
-
-def test_remote_stop(load):
-    fl = FakeFLStudio()
-    fl.playing = True
-    script = load(fl)
+    assert fl.out == [Change("tempo", None, 128500)]  # tempo yes, play no
     script.OnSysEx(Msg(Change("stop", None, 0)))
-    assert fl.playing is False
-    script.OnIdle()
-    assert fl.out == []
+    script.OnSysEx(Msg(Change("play", None, 1920)))
+    assert fl.playing is True and fl.pos == 384  # remote transport ignored
+
+
+def test_script_never_touches_the_transport():
+    import ast
+
+    tree = ast.parse(SCRIPT.read_text(encoding="utf-8"))
+    names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+    assert "transport" not in names
 
 
 def test_remote_tempo_uses_rec_event(load):
@@ -233,19 +221,6 @@ def test_tempo_reported_as_thousandths_is_accepted(load):
     fl.tempo = 141000
     script.OnIdle()
     assert fl.out == [Change("tempo", None, 141000)]
-
-
-def test_old_api_without_song_position(load):
-    fl = FakeFLStudio(api=2)
-    script = load(fl)
-    fl.pos = 999
-    fl.playing = True
-    script.OnIdle()
-    assert fl.out == [Change("play", None, 0)]
-    fl.playing = False
-    script.OnIdle()
-    script.OnSysEx(Msg(Change("play", None, 500)))
-    assert fl.pos == 999  # position untouched without the API
 
 
 def test_foreign_sysex_is_left_unhandled(load):
