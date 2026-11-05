@@ -41,7 +41,7 @@ class FakeFLStudio:
         else:
             self.tracks[index]["solo"] = False
             if self._saved_mutes is not None:
-                for t, m in zip(self.tracks, self._saved_mutes):
+                for t, m in zip(self.tracks, self._saved_mutes, strict=True):
                     t["mute"] = m
                 self._saved_mutes = None
 

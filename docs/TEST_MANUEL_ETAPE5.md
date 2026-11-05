@@ -30,9 +30,11 @@ il compte le tempo, 4 valeurs par piste du mixer et 3 par channel.
   valeur correspond au fader.
 - [ ] **B2.** Tournez le pan de la piste 2 : `mixer piste 2 : pan … %`.
 - [ ] **B3.** Mutez la piste 3 : `mixer piste 3 : mute activé`. Démutez : `désactivé`.
-- [ ] **B4. Solo.** Mettez la piste 1 en solo. Notez **tout** ce qu'affiche le moniteur : FL coupe
-  les autres pistes quand on en met une en solo, donc on attend `solo activé` sur la piste 1, et
-  peut-être une série de `mute activé` sur les autres. Retirez le solo, puis notez à nouveau.
+- [ ] **B4. Solo.** Mettez la piste 1 en solo. On attend **une seule** ligne :
+  `mixer piste 1 : solo activé`, et **aucune** série de `mute` sur les autres pistes, même si FL
+  les coupe. Retirez le solo : une seule ligne `solo désactivé`. Notez tout ce qui s'affiche.
+- [ ] **B4 bis.** Mettez la piste 1 en solo, mutez la piste 3 **pendant** le solo, puis retirez le
+  solo. Le `mixer piste 3 : mute activé` doit arriver **au moment où le solo est retiré**.
 - [ ] **B5. Master.** Bougez le volume du Master : `mixer piste 0 : volume …`.
 
 **Du réseau vers FL** (tapez dans la fenêtre 3) :
@@ -41,8 +43,8 @@ il compte le tempo, 4 valeurs par piste du mixer et 3 par channel.
   le remet à la valeur par défaut.
 - [ ] **B7.** `mix pan 2 -1` : pan tout à gauche. `mix pan 2 0` : au centre.
 - [ ] **B8.** `mix mute 3 on`, puis `mix mute 3 off`.
-- [ ] **B9.** `mix solo 1 on` : la piste 1 passe en solo. Notez si FL coupe les autres pistes, et si
-  le moniteur affiche alors des `mute` venant de `'Moi'` (voir B4). Puis `mix solo 1 off`.
+- [ ] **B9.** `mix solo 1 on` : la piste 1 passe en solo, et le moniteur n'affiche **rien** venant de
+  `'Moi'` (ni solo, ni mutes). `mix solo 1 off` : les mutes d'avant reviennent, toujours sans écho.
 - [ ] **B10. Pas d'écho.** Après B6–B8, aucune ligne `'Moi' → …` ne doit revenir pour la valeur que
   vous venez d'envoyer. Attendez 5 s : plus rien ne doit défiler.
 
@@ -57,7 +59,7 @@ Les channels sont numérotés à partir de **0**, dans l'ordre du groupe « All 
   suit à chaque fois, sans écho.
 - [ ] **C4. Groupes.** Si votre projet a des groupes de channels, affichez un autre groupe que
   « All », puis refaites `ch mute 0 on` : c'est bien le **premier channel du groupe All** qui doit
-  être muté, pas le premier affiché. (Nécessite l'API FL 33 ou plus.)
+  être muté, pas le premier affiché.
 - [ ] **C5. Solo d'un channel.** Clic droit sur le bouton vert d'un channel → solo. Notez ce
   qu'affiche le moniteur. Le solo de channel n'est pas synchronisé en v1 ; on attend des `mute`
   sur les autres channels.
@@ -89,7 +91,6 @@ Mêmes commandes qu'à l'étape 4 (partie C), sur un **même projet** ouvert des
   participants doivent partir du **même projet**. Ajouter, supprimer ou déplacer un channel décale
   les numéros.
 - Le solo de channel, les sends, les effets et les noms ne sont pas synchronisés.
-- Avant l'API FL 33, les channels sont numérotés dans le groupe affiché : changer de groupe change
-  les numéros.
-- Un solo de piste peut se transmettre aussi comme une série de mutes sur les autres pistes, selon
-  la façon dont FL l'applique (à confirmer en B4).
+- Le channel rack n'est synchronisé qu'à partir de l'API FL 33 (avant, la numérotation des channels
+  dépend du groupe affiché, ce qui enverrait les valeurs au mauvais channel).
+- Un mute changé **pendant** un solo de piste n'est transmis qu'une fois le solo retiré.
