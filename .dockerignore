@@ -1,0 +1,16 @@
+# Only server/ and fl_script/flmp_core are copied into the image.
+.git
+.github
+.venv
+.claude
+.pytest_cache
+.ruff_cache
+.coverage
+**/__pycache__
+tests
+docs
+relay
+uv.lock
+.env*
+*.pem
+*.key

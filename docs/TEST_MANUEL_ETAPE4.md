@@ -29,7 +29,7 @@ cd ~/fl-multiplayer
     (`10`). Ne donnez ce numéro à aucune autre sortie, et n'attribuez **pas** de port de sortie
     à `IAC Driver FLMP In`.
 - [ ] **A5. Message de démarrage.** Ouvrez *View > Script output* (le nom exact peut varier selon
-  la version). Vous devez voir `FL Multiplayer 0.1.0-dev chargé (API FL N)`.
+  la version). Vous devez voir `FL Multiplayer 0.1.0 chargé (API FL N)`.
   **Notez N** (la version de l'API) **et votre version de FL Studio.**
   Il ne doit **pas** y avoir le message « aucune sortie MIDI reliée ».
   S'il y a une erreur, par exemple `ImportError`, copiez-la telle quelle.

@@ -1,0 +1,30 @@
+# Fly.io configuration for the FL Multiplayer room server.
+# Replace the app name with your own (it must be unique on Fly.io), then: fly deploy
+app = "fl-multiplayer-CHANGEME"
+primary_region = "cdg"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  # Fly's proxy sets Fly-Client-IP itself: per-IP limits use the real client address.
+  FLMP_TRUST_PROXY = "1"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/healthz"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

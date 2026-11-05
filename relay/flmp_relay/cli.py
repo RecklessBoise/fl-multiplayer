@@ -80,6 +80,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     doctor = sub.add_parser("doctor", help="vérifier l'installation")
     doctor.add_argument("--server", help="adresse du serveur à tester (optionnel)")
     doctor.add_argument("--insecure", action="store_true", help="autoriser ws:// hors localhost")
+    doctor.add_argument(
+        "--virtual", action="store_true", help="vérifier pour flmp join --virtual (sans bus IAC)"
+    )
     ports(doctor)
     return parser.parse_args(argv)
 
@@ -156,12 +159,47 @@ async def _check_server(url: str) -> str:
     return f"protocole {reply.get('proto')}"
 
 
+def _report_buses(
+    report: Callable[..., None], inputs: list[str], outputs: list[str], in_port: str, out_port: str
+) -> None:
+    found_in = find_port(inputs, in_port)
+    report(
+        found_in is not None,
+        f"Bus « {in_port} » (FL → relais) {'trouvé : ' + found_in if found_in else 'introuvable'}",
+        IAC_HINT,
+    )
+    found_out = find_port(outputs, out_port)
+    report(
+        found_out is not None,
+        f"Bus « {out_port} » (relais → FL) "
+        f"{'trouvé : ' + found_out if found_out else 'introuvable'}",
+        IAC_HINT,
+    )
+
+
+def _report_virtual(
+    report: Callable[..., None], inputs: list[str], outputs: list[str], in_port: str, out_port: str
+) -> None:
+    taken = {n.lower() for n in [*inputs, *outputs]}
+    for name in (in_port, out_port):
+        if name.lower() in taken:
+            report(
+                False,
+                f"Un port MIDI « {name} » existe déjà",
+                "→ Un relais tourne déjà, ou un autre programme utilise ce nom. Fermez-le.",
+            )
+            return
+    report(True, f"Ports virtuels « {in_port} » / « {out_port} » libres (créés par flmp join)")
+
+
 async def doctor(
     server: str | None,
     in_port: str,
     out_port: str,
     echo: Callable[[str], None] = print,
     allow_insecure: bool = False,
+    *,
+    virtual: bool = False,
 ) -> bool:
     ok = True
 
@@ -179,19 +217,10 @@ async def doctor(
     except Exception as exc:
         report(False, f"Pilote MIDI indisponible ({exc})", "→ Réinstallez le relais.")
         inputs, outputs = [], []
-    found_in = find_port(inputs, in_port)
-    report(
-        found_in is not None,
-        f"Bus « {in_port} » (FL → relais) {'trouvé : ' + found_in if found_in else 'introuvable'}",
-        IAC_HINT,
-    )
-    found_out = find_port(outputs, out_port)
-    report(
-        found_out is not None,
-        f"Bus « {out_port} » (relais → FL) "
-        f"{'trouvé : ' + found_out if found_out else 'introuvable'}",
-        IAC_HINT,
-    )
+    if virtual:
+        _report_virtual(report, inputs, outputs, in_port, out_port)
+    else:
+        _report_buses(report, inputs, outputs, in_port, out_port)
     if server:
         try:
             check_server_url(server, allow_insecure)
@@ -247,7 +276,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
     if args.command == "doctor":
-        good = asyncio.run(doctor(args.server, args.in_port, args.out_port, print, args.insecure))
+        good = asyncio.run(
+            doctor(
+                args.server, args.in_port, args.out_port, print, args.insecure, virtual=args.virtual
+            )
+        )
         return 0 if good else 1
     try:
         check_server_url(args.server, args.insecure)

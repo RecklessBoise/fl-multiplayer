@@ -1,6 +1,6 @@
 [project]
 name = "fl-multiplayer"
-version = "0.0.0"
+version = "0.1.0"
 description = "Real-time sync of transport and mixer between two FL Studio instances (unofficial)."
 readme = "README.md"
 license = "MIT"
