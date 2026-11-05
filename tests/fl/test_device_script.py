@@ -473,3 +473,30 @@ def test_fader_rounding_by_fl_is_not_echoed(load):
         for _ in range(4):
             script.OnIdle()
     assert fl.out == []
+
+
+def test_solo_already_active_at_load_sends_no_false_mutes(load):
+    fl = FakeFLStudio()
+    fl.solo(1, True)  # the project was saved with track 1 solo
+    script = load(fl)
+    script.OnIdle()
+    fl.solo(1, False)
+    script.OnIdle()
+    assert fl.out == [Change("mix_solo", 1, 0)]
+
+
+def test_remote_mute_during_solo_survives_unsolo(load):
+    # If FL restores the pre-solo mutes on unsolo, the mute received meanwhile
+    # must be put back, and nothing echoed.
+    fl = FakeFLStudio()
+    script = load(fl)
+    fl.solo(1, True)
+    script.OnIdle()
+    fl.out.clear()
+    script.OnSysEx(Msg(Change("mix_mute", 2, 1)))
+    script.OnIdle()
+    fl.solo(1, False)
+    script.OnIdle()
+    script.OnIdle()
+    assert fl.tracks[2]["mute"] is True
+    assert fl.out == [Change("mix_solo", 1, 0)]
