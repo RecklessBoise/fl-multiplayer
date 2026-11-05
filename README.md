@@ -124,14 +124,15 @@ La lecture démarre à la même position, mais pas à l'échantillon près.
 ou serveur gratuit en veille). Le relais se reconnecte tout seul ; un serveur Render endormi met
 environ une minute à se réveiller.
 
-**« Refusé : bad_secret ».** Le mot de passe ne correspond pas à celui du premier arrivé dans le
-salon. Vérifiez-le, ou changez de code de salon.
+**« Le serveur a refusé la connexion : bad_secret: wrong room secret ».** Le mot de passe ne
+correspond pas à celui du premier arrivé dans le salon. Vérifiez-le, ou changez de code de salon.
 
 **« Un port MIDI « FLMP In » existe déjà ».** Un relais tourne déjà dans une autre fenêtre du
 Terminal, ou un autre programme utilise ce nom. Fermez-le, puis relancez.
 
-**Le relais affiche « SysEx ignoré (pas FL Multiplayer) ».** Un autre logiciel (par exemple Logic
-Pro) envoie des messages à tous les ports MIDI. C'est sans effet : le relais les ignore.
+**Avec l'option `-v` (`uv run flmp -v join …`), le relais affiche « SysEx ignoré (pas FL
+Multiplayer) ».** Un autre logiciel (par exemple Logic Pro) envoie des messages à tous les ports
+MIDI. C'est sans effet : le relais les ignore.
 
 **Quand je retire un solo, tous les mutes disparaissent.** C'est le comportement de FL Studio : le
 retrait d'un solo démute toutes les pistes. FL Multiplayer reproduit la même chose chez l'autre.

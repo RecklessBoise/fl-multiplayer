@@ -71,4 +71,6 @@ jobs:
       - name: Runs as non-root, without MIDI libraries
         run: |
           test "$(docker exec flmp id -u)" != "0"
-          ! docker exec flmp python -c "import mido"
+          if docker exec flmp python -c "import mido"; then
+            echo "mido must not be in the server image" && exit 1
+          fi

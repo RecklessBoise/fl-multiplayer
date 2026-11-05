@@ -1,6 +1,7 @@
 # FL Multiplayer room server. Only the server runs here: no MIDI, no FL script.
 # TLS (wss://) is terminated by the hosting platform (Fly.io, Render).
-FROM python:3.12-slim-bookworm
+# Multi-arch index digest of python:3.12-slim-bookworm (update deliberately).
+FROM python:3.12-slim-bookworm@sha256:e697c81897302a4c4333bade000d98038fbb21eb064f8ee1fd42d02ebcd9d337
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

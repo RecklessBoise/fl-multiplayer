@@ -64,7 +64,8 @@ def test_fly_config_trusts_only_fly_proxy():
 
 
 def test_render_config_trusts_no_header():
-    text = (ROOT / "render.yaml").read_text(encoding="utf-8")
+    lines = (ROOT / "render.yaml").read_text(encoding="utf-8").splitlines()
+    text = "\n".join(line for line in lines if not line.lstrip().startswith("#"))
     assert "FLMP_TRUST_PROXY" not in text  # Render's X-Forwarded-For can be spoofed
     assert re.search(r"healthCheckPath:\s*/healthz", text)
     assert re.search(r"plan:\s*free", text)
