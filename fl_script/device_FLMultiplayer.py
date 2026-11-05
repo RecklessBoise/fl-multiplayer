@@ -57,7 +57,8 @@ class FLAdapter:
 
     def read_state(self):
         tempo = mixer.getCurrentTempo()
-        # Documented as "current tempo"; accept both BPM (e.g. 140.0) and BPM*1000.
+        # FL 2026 (API 45) returns BPM*1000 (e.g. 95000); getCurrentTempo(True) gives BPM.
+        # Older versions are undocumented, so accept both BPM (e.g. 140.0) and BPM*1000.
         value = round(tempo) if tempo > 1000 else round(tempo * 1000)
         return {("tempo", None): value}
 
