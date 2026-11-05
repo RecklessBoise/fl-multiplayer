@@ -54,7 +54,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     join.add_argument(
         "--virtual",
         action="store_true",
-        help="créer soi-même les ports « FLMP In » / « FLMP Out » (pas besoin de bus IAC)",
+        help="créer soi-même les ports « FLMP In » / « FLMP Out », sans bus IAC (macOS, Linux)",
     )
     ports(join)
 
