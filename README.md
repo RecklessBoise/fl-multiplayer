@@ -124,7 +124,7 @@ La lecture démarre à la même position, mais pas à l'échantillon près.
 ou serveur gratuit en veille). Le relais se reconnecte tout seul ; un serveur Render endormi met
 environ une minute à se réveiller.
 
-**« Le serveur a refusé la connexion : bad_secret: wrong room secret ».** Le mot de passe ne
+**« Le serveur a refusé la connexion : bad_secret: 'wrong room secret' ».** Le mot de passe ne
 correspond pas à celui du premier arrivé dans le salon. Vérifiez-le, ou changez de code de salon.
 
 **« Un port MIDI « FLMP In » existe déjà ».** Un relais tourne déjà dans une autre fenêtre du
