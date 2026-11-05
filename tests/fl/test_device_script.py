@@ -29,6 +29,7 @@ class FakeFLStudio:
         self.group = [2, 0]  # group index -> global index
         self.global_calls = []
         self._saved_mutes = None
+        self.last_insert = 3
 
     def solo(self, index, on):
         """Like FL: soloing a track mutes the others; unsolo restores them."""
@@ -66,7 +67,8 @@ class FakeFLStudio:
         mixer = types.ModuleType("mixer")
         mixer.getCurrentTempo = lambda asInt=False: fl.tempo
         mixer.trackCount = lambda: len(fl.tracks)
-        mixer.getTrackInfo = lambda mode: {0: 0, 1: 1, 2: 3, 3: 4}[mode]
+        # FL 2026 grows the mixer as inserts are added; "current" has a special index.
+        mixer.getTrackInfo = lambda mode: {0: 0, 1: 1, 2: fl.last_insert, 3: 501}[mode]
         mixer.getTrackVolume = lambda index, mode=0: fl.tracks[index]["vol"]
         mixer.getTrackPan = lambda index: fl.tracks[index]["pan"]
         mixer.isTrackMuted = lambda index: fl.tracks[index]["mute"]
@@ -500,3 +502,15 @@ def test_remote_mute_during_solo_survives_unsolo(load):
     script.OnIdle()
     assert fl.tracks[2]["mute"] is True
     assert fl.out == [Change("mix_solo", 1, 0)]
+
+
+def test_inserts_added_after_load_are_synced(load):
+    fl = FakeFLStudio()
+    script = load(fl)
+    fl.tracks.append({"vol": 0.8, "pan": 0.0, "mute": False, "solo": False})
+    fl.last_insert = 4  # the user adds an insert track in FL 2026
+    script.OnIdle()  # new track: its values are announced once
+    fl.out.clear()
+    fl.tracks[4]["vol"] = 0.5
+    script.OnIdle()
+    assert fl.out == [Change("mix_vol", 4, unit_to_u14(0.5))]
