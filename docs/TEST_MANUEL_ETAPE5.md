@@ -30,11 +30,10 @@ il compte le tempo, 4 valeurs par piste du mixer et 3 par channel.
   valeur correspond au fader.
 - [ ] **B2.** Tournez le pan de la piste 2 : `mixer piste 2 : pan … %`.
 - [ ] **B3.** Mutez la piste 3 : `mixer piste 3 : mute activé`. Démutez : `désactivé`.
-- [ ] **B4. Solo.** Mettez la piste 1 en solo. On attend **une seule** ligne :
+- [ ] **B4. Solo.** Mutez la piste 3, puis mettez la piste 1 en solo. On attend **une seule** ligne :
   `mixer piste 1 : solo activé`, et **aucune** série de `mute` sur les autres pistes, même si FL
-  les coupe. Retirez le solo : une seule ligne `solo désactivé`. Notez tout ce qui s'affiche.
-- [ ] **B4 bis.** Mettez la piste 1 en solo, mutez la piste 3 **pendant** le solo, puis retirez le
-  solo. Le `mixer piste 3 : mute activé` doit arriver **au moment où le solo est retiré**.
+  les coupe. Retirez le solo : `solo désactivé` **et** `mixer piste 3 : mute désactivé`, car FL
+  démute toutes les pistes au retrait d'un solo (comportement de FL, vérifié dans FL 2026).
 - [ ] **B5. Master.** Bougez le volume du Master : `mixer piste 0 : volume …`.
 
 **Du réseau vers FL** (tapez dans la fenêtre 3) :
@@ -45,8 +44,8 @@ il compte le tempo, 4 valeurs par piste du mixer et 3 par channel.
 - [ ] **B8.** `mix mute 3 on`, puis `mix mute 3 off`.
 - [ ] **B9.** `mix solo 1 on` : la piste 1 passe en solo, et le moniteur n'affiche **rien** venant de
   `'Moi'` (ni solo, ni mutes). `mix solo 1 off` : les mutes d'avant reviennent, toujours sans écho.
-- [ ] **B9 bis.** `mix solo 1 on`, puis `mix mute 3 on` pendant le solo, puis `mix solo 1 off` : la
-  piste 3 doit **rester mutée** après le retrait du solo, sans écho.
+- [ ] **B9 bis.** Mutez la piste 2, puis tapez `mix solo 1 off` alors qu'aucune piste n'est en solo :
+  la piste 2 doit **rester mutée** (rien ne bouge, rien ne revient).
 - [ ] **B10. Pas d'écho.** Après B6–B8, aucune ligne `'Moi' → …` ne doit revenir pour la valeur que
   vous venez d'envoyer. Attendez 5 s : plus rien ne doit défiler.
 
@@ -95,4 +94,6 @@ Mêmes commandes qu'à l'étape 4 (partie C), sur un **même projet** ouvert des
 - Le solo de channel, les sends, les effets et les noms ne sont pas synchronisés.
 - Le channel rack n'est synchronisé qu'à partir de l'API FL 33 (avant, la numérotation des channels
   dépend du groupe affiché, ce qui enverrait les valeurs au mauvais channel).
+- Comportement de FL (vérifié dans FL 2026) : retirer un solo démute **toutes** les pistes, et
+  changer un mute pendant un solo annule le solo. La synchro reproduit fidèlement ces effets.
 - Un mute changé **pendant** un solo de piste n'est transmis qu'une fois le solo retiré.
