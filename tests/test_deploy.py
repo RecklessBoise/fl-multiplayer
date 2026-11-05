@@ -51,6 +51,7 @@ def test_dockerfile_is_minimal_and_unprivileged():
     assert re.search(r"^USER\s+(?!root)\S+", text, flags=re.M)
     assert "mido" not in text and "rtmidi" not in text
     assert re.search(r"^FROM python:3\.12-slim", text, flags=re.M)  # hashes are for cp312
+    assert re.search(r"^FROM \S+@sha256:[0-9a-f]{64}$", text, flags=re.M)  # immutable base
 
 
 def test_fly_config_trusts_only_fly_proxy():
