@@ -6,6 +6,7 @@ import types
 from pathlib import Path
 
 import pytest
+from flmp_core.codec import pan_to_u14, unit_to_u14
 from flmp_core.messages import Change, decode, encode
 
 SCRIPT = Path(__file__).resolve().parents[2] / "fl_script" / "device_FLMultiplayer.py"
@@ -20,6 +21,13 @@ class FakeFLStudio:
         self.out = []
         self.assigned = True
         self.rec_events = []
+        # Mixer: 0 = master, 1..3 = inserts, 4 = "current" (must be ignored).
+        self.tracks = [{"vol": 0.8, "pan": 0.0, "mute": False, "solo": False} for _ in range(5)]
+        # Channel rack, by global index. The visible group shows them in another
+        # order, so a script using group indexes would touch the wrong channel.
+        self.chans = [{"vol": 0.78125, "pan": 0.0, "mute": False} for _ in range(3)]
+        self.group = [2, 0]  # group index -> global index
+        self.global_calls = []
 
     def modules(self):
         fl = self
@@ -41,11 +49,73 @@ class FakeFLStudio:
 
         mixer = types.ModuleType("mixer")
         mixer.getCurrentTempo = lambda asInt=False: fl.tempo
+        mixer.trackCount = lambda: len(fl.tracks)
+        mixer.getTrackInfo = lambda mode: {0: 0, 1: 1, 2: 3, 3: 4}[mode]
+        mixer.getTrackVolume = lambda index, mode=0: fl.tracks[index]["vol"]
+        mixer.getTrackPan = lambda index: fl.tracks[index]["pan"]
+        mixer.isTrackMuted = lambda index: fl.tracks[index]["mute"]
+        mixer.isTrackSolo = lambda index: fl.tracks[index]["solo"]
+
+        def set_track(field):
+            def setter(index, value, pickupMode=0):
+                fl.tracks[index][field] = value
+
+            return setter
+
+        mixer.setTrackVolume = set_track("vol")
+        mixer.setTrackPan = set_track("pan")
+
+        def mute_track(index, value=-1):
+            assert value in (0, 1)  # never toggle blindly
+            fl.tracks[index]["mute"] = bool(value)
+
+        def solo_track(index, value=-1, mode=-1):
+            assert value in (0, 1)
+            fl.tracks[index]["solo"] = bool(value)
+
+        mixer.muteTrack = mute_track
+        mixer.soloTrack = solo_track
+
+        channels = types.ModuleType("channels")
+
+        def chan(index, use_global):
+            fl.global_calls.append(use_global)
+            return fl.chans[index if use_global else fl.group[index]]
+
+        channels.channelCount = lambda globalCount=False: (
+            len(fl.chans) if globalCount else len(fl.group)
+        )
+        channels.getChannelVolume = lambda index, mode=False, useGlobalIndex=False: chan(
+            index, useGlobalIndex
+        )["vol"]
+        channels.getChannelPan = lambda index, useGlobalIndex=False: chan(index, useGlobalIndex)[
+            "pan"
+        ]
+        channels.isChannelMuted = lambda index, useGlobalIndex=False: chan(index, useGlobalIndex)[
+            "mute"
+        ]
+
+        def set_chan(field):
+            def setter(index, value, pickupMode=0, useGlobalIndex=False):
+                chan(index, useGlobalIndex)[field] = value
+
+            return setter
+
+        channels.setChannelVolume = set_chan("vol")
+        channels.setChannelPan = set_chan("pan")
+
+        def mute_channel(index, value=-1, useGlobalIndex=False):
+            assert value in (0, 1)
+            chan(index, useGlobalIndex)["mute"] = bool(value)
+
+        channels.muteChannel = mute_channel
 
         midi = types.ModuleType("midi")
         midi.REC_Tempo = 0x1F0
         midi.REC_Control = 0x0F
         midi.REC_UpdateControl = 0x10
+        midi.PIM_None = 0
+        midi.TN_Master, midi.TN_FirstIns, midi.TN_LastIns, midi.TN_Sel = 0, 1, 2, 3
 
         general = types.ModuleType("general")
         general.getVersion = lambda: fl.api
@@ -64,6 +134,7 @@ class FakeFLStudio:
         return {
             "transport": transport,
             "mixer": mixer,
+            "channels": channels,
             "midi": midi,
             "general": general,
             "device": device,
@@ -203,3 +274,118 @@ def test_init_failure_does_not_raise(load, monkeypatch):
     monkeypatch.setattr(sys.modules["general"], "getVersion", broken)
     script.OnInit()  # must not raise
     script.OnIdle()
+
+
+# -- step 5: mixer and channel rack ------------------------------------------------
+
+
+def test_local_mixer_changes_are_sent(load):
+    fl = FakeFLStudio()
+    script = load(fl)
+    fl.tracks[1]["vol"] = 0.5
+    fl.tracks[2]["pan"] = -0.25
+    fl.tracks[3]["mute"] = True
+    fl.tracks[0]["solo"] = True
+    script.OnIdle()
+    assert set(fl.out) == {
+        Change("mix_vol", 1, unit_to_u14(0.5)),
+        Change("mix_pan", 2, pan_to_u14(-0.25)),
+        Change("mix_mute", 3, 1),
+        Change("mix_solo", 0, 1),
+    }
+
+
+def test_current_track_is_ignored(load):
+    fl = FakeFLStudio()
+    script = load(fl)
+    fl.tracks[4]["vol"] = 0.1  # the "current" track mirrors whatever is selected
+    script.OnIdle()
+    assert fl.out == []
+    script.OnSysEx(Msg(Change("mix_vol", 4, 0)))
+    assert fl.tracks[4]["vol"] == 0.1
+
+
+def test_remote_mixer_changes_apply_without_echo(load):
+    fl = FakeFLStudio()
+    script = load(fl)
+    for change in (
+        Change("mix_vol", 1, unit_to_u14(0.25)),
+        Change("mix_pan", 2, pan_to_u14(0.5)),
+        Change("mix_mute", 3, 1),
+        Change("mix_solo", 1, 1),
+    ):
+        msg = Msg(change)
+        script.OnSysEx(msg)
+        assert msg.handled is True
+    assert abs(fl.tracks[1]["vol"] - 0.25) < 1e-3
+    assert abs(fl.tracks[2]["pan"] - 0.5) < 1e-3
+    assert fl.tracks[3]["mute"] is True and fl.tracks[1]["solo"] is True
+    script.OnIdle()
+    script.OnIdle()
+    assert fl.out == []
+
+
+def test_local_channel_changes_use_global_index(load):
+    fl = FakeFLStudio(api=33)
+    script = load(fl)
+    fl.chans[2]["vol"] = 0.5
+    fl.chans[1]["pan"] = 1.0
+    fl.chans[0]["mute"] = True
+    script.OnIdle()
+    assert set(fl.out) == {
+        Change("ch_vol", 2, unit_to_u14(0.5)),
+        Change("ch_pan", 1, pan_to_u14(1.0)),
+        Change("ch_mute", 0, 1),
+    }
+    assert all(fl.global_calls)
+
+
+def test_remote_channel_changes_apply_to_the_right_channel(load):
+    fl = FakeFLStudio(api=33)
+    script = load(fl)
+    script.OnSysEx(Msg(Change("ch_vol", 0, unit_to_u14(0.25))))
+    script.OnSysEx(Msg(Change("ch_mute", 2, 1)))
+    assert abs(fl.chans[0]["vol"] - 0.25) < 1e-3
+    assert fl.chans[2]["mute"] is True
+    script.OnIdle()
+    assert fl.out == []
+
+
+def test_old_api_uses_group_indexes(load):
+    fl = FakeFLStudio(api=32)  # useGlobalIndex does not exist before API 33
+    script = load(fl)
+    fl.chans[2]["vol"] = 0.5  # group index 0
+    script.OnIdle()
+    assert fl.out == [Change("ch_vol", 0, unit_to_u14(0.5))]
+    assert not any(fl.global_calls)
+
+
+def test_unknown_indexes_are_ignored(load):
+    fl = FakeFLStudio()
+    script = load(fl)
+    script.OnSysEx(Msg(Change("mix_vol", 99, 0)))
+    script.OnSysEx(Msg(Change("ch_vol", 99, 0)))
+    script.OnIdle()
+    assert fl.out == []
+
+
+def test_snapshot_contains_mixer_and_channels(load):
+    fl = FakeFLStudio(api=33)
+    script = load(fl)
+    script.OnSysEx(Msg(Change("snapshot_req", None, 0)))
+    kinds = {c.kind for c in fl.out}
+    assert {"tempo", "mix_vol", "mix_pan", "mix_mute", "mix_solo", "ch_vol", "ch_pan"} <= kinds
+    assert not any(c.kind.startswith("mix_") and c.index == 4 for c in fl.out)
+    assert len([c for c in fl.out if c.kind == "ch_mute"]) == 3
+
+
+def test_script_imports_only_fl_modules_and_core():
+    import ast
+
+    allowed = {"transport", "mixer", "channels", "patterns", "device", "general", "midi", "ui"}
+    tree = ast.parse(SCRIPT.read_text(encoding="utf-8"), feature_version=(3, 7))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            assert {a.name for a in node.names} <= allowed
+        elif isinstance(node, ast.ImportFrom):
+            assert node.module.split(".")[0] == "flmp_core"
