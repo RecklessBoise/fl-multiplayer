@@ -28,6 +28,22 @@ class FakeFLStudio:
         self.chans = [{"vol": 0.78125, "pan": 0.0, "mute": False} for _ in range(3)]
         self.group = [2, 0]  # group index -> global index
         self.global_calls = []
+        self._saved_mutes = None
+
+    def solo(self, index, on):
+        """Like FL: soloing a track mutes the others; unsolo restores them."""
+        if on:
+            if self._saved_mutes is None:
+                self._saved_mutes = [t["mute"] for t in self.tracks]
+            for i, t in enumerate(self.tracks):
+                t["solo"] = i == index
+                t["mute"] = i not in (0, index)
+        else:
+            self.tracks[index]["solo"] = False
+            if self._saved_mutes is not None:
+                for t, m in zip(self.tracks, self._saved_mutes):
+                    t["mute"] = m
+                self._saved_mutes = None
 
     def modules(self):
         fl = self
@@ -58,7 +74,9 @@ class FakeFLStudio:
 
         def set_track(field):
             def setter(index, value, pickupMode=0):
-                fl.tracks[index][field] = value
+                # FL stores faders with a finite resolution: what it reports back
+                # differs slightly from what was written.
+                fl.tracks[index][field] = round(value * 12800) / 12800
 
             return setter
 
@@ -71,7 +89,7 @@ class FakeFLStudio:
 
         def solo_track(index, value=-1, mode=-1):
             assert value in (0, 1)
-            fl.tracks[index]["solo"] = bool(value)
+            fl.solo(index, bool(value))
 
         mixer.muteTrack = mute_track
         mixer.soloTrack = solo_track
@@ -285,13 +303,11 @@ def test_local_mixer_changes_are_sent(load):
     fl.tracks[1]["vol"] = 0.5
     fl.tracks[2]["pan"] = -0.25
     fl.tracks[3]["mute"] = True
-    fl.tracks[0]["solo"] = True
     script.OnIdle()
     assert set(fl.out) == {
         Change("mix_vol", 1, unit_to_u14(0.5)),
         Change("mix_pan", 2, pan_to_u14(-0.25)),
         Change("mix_mute", 3, 1),
-        Change("mix_solo", 0, 1),
     }
 
 
@@ -351,13 +367,16 @@ def test_remote_channel_changes_apply_to_the_right_channel(load):
     assert fl.out == []
 
 
-def test_old_api_uses_group_indexes(load):
-    fl = FakeFLStudio(api=32)  # useGlobalIndex does not exist before API 33
+def test_old_api_does_not_sync_channels(load):
+    # Before API 33 channel indexes follow the visible group: switching groups
+    # would move values to the wrong channel, so channels are left alone.
+    fl = FakeFLStudio(api=32)
     script = load(fl)
-    fl.chans[2]["vol"] = 0.5  # group index 0
+    fl.chans[2]["vol"] = 0.5
     script.OnIdle()
-    assert fl.out == [Change("ch_vol", 0, unit_to_u14(0.5))]
-    assert not any(fl.global_calls)
+    script.OnSysEx(Msg(Change("ch_mute", 0, 1)))
+    assert fl.out == []
+    assert not any(c["mute"] for c in fl.chans)
 
 
 def test_unknown_indexes_are_ignored(load):
@@ -389,3 +408,68 @@ def test_script_imports_only_fl_modules_and_core():
             assert {a.name for a in node.names} <= allowed
         elif isinstance(node, ast.ImportFrom):
             assert node.module.split(".")[0] == "flmp_core"
+
+
+def test_local_solo_sends_only_the_solo(load):
+    fl = FakeFLStudio()
+    fl.tracks[2]["mute"] = True  # a mute the user set before soloing
+    script = load(fl)
+    fl.solo(1, True)  # FL mutes every other track
+    script.OnIdle()
+    assert fl.out == [Change("mix_solo", 1, 1)]
+    fl.out.clear()
+    fl.solo(1, False)  # FL restores the previous mutes
+    script.OnIdle()
+    assert fl.out == [Change("mix_solo", 1, 0)]
+
+
+def test_remote_solo_does_not_echo_mutes(load):
+    fl = FakeFLStudio()
+    script = load(fl)
+    script.OnSysEx(Msg(Change("mix_solo", 3, 1)))
+    assert fl.tracks[3]["solo"] is True and fl.tracks[1]["mute"] is True
+    for _ in range(5):
+        script.OnIdle()
+    assert fl.out == []
+    script.OnSysEx(Msg(Change("mix_solo", 3, 0)))
+    for _ in range(5):
+        script.OnIdle()
+    assert fl.out == []
+    assert not any(t["mute"] for t in fl.tracks)
+
+
+def test_mute_set_during_solo_is_sent_after_unsolo(load):
+    fl = FakeFLStudio()
+    script = load(fl)
+    fl.solo(1, True)
+    script.OnIdle()
+    fl.out.clear()
+    fl._saved_mutes[2] = True  # user mutes track 2 while track 1 is solo
+    script.OnIdle()
+    assert fl.out == []
+    fl.solo(1, False)
+    script.OnIdle()
+    assert set(fl.out) == {Change("mix_solo", 1, 0), Change("mix_mute", 2, 1)}
+
+
+def test_remote_mute_during_solo_does_not_echo(load):
+    fl = FakeFLStudio()
+    script = load(fl)
+    fl.solo(1, True)
+    script.OnIdle()
+    fl.out.clear()
+    script.OnSysEx(Msg(Change("mix_mute", 2, 1)))
+    for _ in range(5):
+        script.OnIdle()
+    assert fl.out == []
+
+
+def test_fader_rounding_by_fl_is_not_echoed(load):
+    fl = FakeFLStudio()
+    script = load(fl)
+    for v in (0.123456, 0.5, 0.987654):
+        script.OnSysEx(Msg(Change("mix_vol", 1, unit_to_u14(v))))
+        script.OnSysEx(Msg(Change("mix_pan", 1, pan_to_u14(v - 0.5))))
+        for _ in range(4):
+            script.OnIdle()
+    assert fl.out == []
