@@ -64,6 +64,22 @@ class TestDoctor:
         assert "FLMP Out" in text and "FLMP In" in text
         assert "Configuration audio et MIDI" in text
 
+    async def test_virtual_needs_no_iac_bus(self, ports):
+        ports([], [])
+        lines = []
+        assert await cli.doctor(None, "FLMP Out", "FLMP In", lines.append, virtual=True) is True
+        assert any("virtuels" in line and "OK" in line for line in lines)
+
+    async def test_virtual_reports_a_taken_name(self, ports):
+        ports(["FLMP In"], [])  # another program already offers this name
+        lines = []
+        assert await cli.doctor(None, "FLMP Out", "FLMP In", lines.append, virtual=True) is False
+        assert any("existe déjà" in line for line in lines)
+
+    def test_doctor_virtual_flag(self):
+        assert cli.parse_args(["doctor", "--virtual"]).virtual is True
+        assert cli.parse_args(["doctor"]).virtual is False
+
     async def test_unreachable_server(self, ports, unused_tcp_port):
         lines = []
         url = f"ws://127.0.0.1:{unused_tcp_port}"
