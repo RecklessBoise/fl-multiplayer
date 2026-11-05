@@ -494,3 +494,37 @@ def test_inserts_added_after_load_are_synced(load):
     fl.tracks[4]["vol"] = 0.5
     script.OnIdle()
     assert fl.out == [Change("mix_vol", 4, unit_to_u14(0.5))]
+
+
+def test_peer_unsolo_batch_converges(load):
+    # Peer A had track 3 muted, soloed track 1, then unsoloed: A's FL unmuted every
+    # track, so A sends (sorted) mute 3 = 0, then solo 1 = 0. B must end up like A.
+    fl = FakeFLStudio()
+    fl.tracks[3]["mute"] = True
+    script = load(fl)
+    script.OnSysEx(Msg(Change("mix_solo", 1, 1)))
+    script.OnIdle()
+    script.OnSysEx(Msg(Change("mix_mute", 3, 0)))
+    script.OnSysEx(Msg(Change("mix_solo", 1, 0)))
+    for _ in range(5):
+        script.OnIdle()
+    assert not any(t["solo"] for t in fl.tracks)
+    assert not any(t["mute"] for t in fl.tracks)
+    assert fl.out == []
+
+
+def test_peer_mute_during_solo_converges(load):
+    # On A, a mute during the solo ended it: A sends the mutes FL left (sorted),
+    # then solo 1 = 0. B must end up with the same mutes, without echo.
+    fl = FakeFLStudio()
+    script = load(fl)
+    script.OnSysEx(Msg(Change("mix_solo", 1, 1)))
+    script.OnIdle()
+    for i in (2, 3):
+        script.OnSysEx(Msg(Change("mix_mute", i, 1)))
+    script.OnSysEx(Msg(Change("mix_solo", 1, 0)))
+    for _ in range(5):
+        script.OnIdle()
+    assert [t["mute"] for t in fl.tracks[:4]] == [False, False, True, True]
+    assert not any(t["solo"] for t in fl.tracks)
+    assert fl.out == []
