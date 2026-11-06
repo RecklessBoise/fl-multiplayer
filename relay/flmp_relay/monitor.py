@@ -16,6 +16,7 @@ from typing import Any
 from flmp_core import PROTOCOL_VERSION
 from flmp_core.codec import pan_to_u14, u14_to_pan, u14_to_unit, unit_to_u14
 from flmp_core.messages import KINDS, ProtocolError, parse_fields
+from flmp_core.pattern import check_pattern
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
@@ -125,6 +126,14 @@ def describe(msg: dict[str, Any], names: dict[str, str]) -> str | None:
             return f"{who} → {target} : {_shown_value(str(what), value)}"
         shown_index = index if isinstance(index, int) else "-"
         return f"{who} → {clean(what)} [{shown_index}] = {value}"
+    if kind == "pattern":
+        sender = msg.get("from")
+        who = clean(names.get(sender, "?") if isinstance(sender, str) else "?").strip("'")
+        try:
+            ppq, notes = check_pattern(msg.get("ppq"), msg.get("notes"))
+        except ProtocolError:
+            return f"{who} → pattern invalide ignoré"
+        return f"{who} → pattern de {len(notes)} note(s), PPQ {ppq}"
     if kind == "peer_joined":
         return f"{clean(msg.get('name'))} a rejoint le salon"
     if kind == "peer_left":
