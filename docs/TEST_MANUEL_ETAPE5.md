@@ -11,7 +11,7 @@ vraiment le mixer et le channel rack.
 
 - [ ] **A1. Script à jour.** `uv run flmp install-script`, puis dans FL :
   *View > Script output*, onglet **FLMP In**, bouton **Reload script** (ou relancez FL).
-  Le message `FL Multiplayer 0.1.0 chargé (API FL N)` doit réapparaître, sans erreur.
+  Le message `FL Multiplayer <version> chargé (API FL N)` doit réapparaître, sans erreur.
 - [ ] **A2. Trois Terminaux**, comme à l'étape 4, dans `~/fl-multiplayer` :
   1. `uv run flmp-server`
   2. `uv run flmp join --server ws://localhost:8765 --room TEST1 --name Moi --virtual`

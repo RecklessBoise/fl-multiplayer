@@ -34,7 +34,7 @@ from flmp_core.controller import Controller
 
 MUTE_API = 2  # mixer.isTrackMuted / muteTrack
 GLOBAL_INDEX_API = 33  # channels.*(useGlobalIndex=True); channel sync needs it
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 
 def _log(text):
