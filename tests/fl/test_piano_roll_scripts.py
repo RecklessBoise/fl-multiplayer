@@ -226,3 +226,9 @@ def test_send_without_exchange_folder_asks_to_start_the_relay(fl, tmp_path):
     run(load(SEND, tmp_path / "missing"))
     assert not (tmp_path / "missing").exists()
     assert "relais" in fl.messages[-1]
+
+
+def test_send_message_agrees_with_one_note(fl, tmp_path):
+    fl.score.notes = [FakeNote()]
+    run(load(SEND, tmp_path))
+    assert "1 note du pattern prête à partir" in fl.messages[-1]

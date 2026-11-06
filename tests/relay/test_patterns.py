@@ -115,3 +115,10 @@ def test_outbox_still_being_written_is_left_for_later(tmp_path):
     assert box.take_outbox() is None
     now[0] += 0.5
     assert box.take_outbox() is not None
+
+
+def test_note_count_wording():
+    from flmp_relay.patterns import notes_label
+
+    assert notes_label(1) == "1 note"
+    assert notes_label(3) == "3 notes"
