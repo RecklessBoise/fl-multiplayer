@@ -30,10 +30,17 @@ class Mailbox:
     MAX_BYTES = 512 * 1024  # 4000 notes fit easily
     INBOX_MIN_INTERVAL = 1.0  # a peer can't keep overwriting the inbox
     NAME_MAX = 40
+    SETTLE = 0.2  # the FL script writes in place: let it finish before reading
 
-    def __init__(self, folder: Path, clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(
+        self,
+        folder: Path,
+        clock: Callable[[], float] = time.monotonic,
+        wall_clock: Callable[[], float] = time.time,
+    ) -> None:
         self.folder = Path(folder)
         self._clock = clock
+        self._wall_clock = wall_clock
         self._last_inbox: float | None = None
         self.folder.mkdir(parents=True, exist_ok=True)
         self._outbox = self.folder / OUTBOX
@@ -54,6 +61,8 @@ class Mailbox:
         stamp = self._stamp()
         if stamp is None or stamp == self._seen:
             return None
+        if self._wall_clock() - stamp[0] / 1e9 < self.SETTLE:
+            return None  # maybe still being written: look again on the next poll
         self._seen = stamp
         if stamp[1] > self.MAX_BYTES:
             log.warning("Pattern à envoyer ignoré : fichier trop gros")

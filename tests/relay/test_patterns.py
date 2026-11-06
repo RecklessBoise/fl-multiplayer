@@ -2,11 +2,17 @@
 
 import json
 import os
+import time
 
 import pytest
 from flmp_relay.patterns import INBOX, OUTBOX, Mailbox
 
 NOTES = [[69, 192, 48, 0.78125, 0.5, 0.5]]
+
+
+def later():
+    """A wall clock 10 s ahead: files written by the test count as settled."""
+    return time.time() + 10
 
 
 def write_outbox(folder, ppq=96, notes=NOTES, mtime=None):
@@ -43,14 +49,14 @@ def test_new_outbox_is_taken_once(tmp_path):
     ["not json", "[]", json.dumps({"ppq": 96}), json.dumps({"ppq": 96, "notes": [[999]]})],
 )
 def test_invalid_outbox_is_skipped(tmp_path, content, caplog):
-    box = Mailbox(tmp_path)
+    box = Mailbox(tmp_path, wall_clock=later)
     (tmp_path / OUTBOX).write_text(content, encoding="utf-8")
     assert box.take_outbox() is None
     assert "ignoré" in caplog.text
 
 
 def test_oversized_outbox_is_skipped(tmp_path, caplog):
-    box = Mailbox(tmp_path)
+    box = Mailbox(tmp_path, wall_clock=later)
     (tmp_path / OUTBOX).write_text(" " * (Mailbox.MAX_BYTES + 1), encoding="utf-8")
     assert box.take_outbox() is None
     assert "ignoré" in caplog.text
@@ -77,7 +83,7 @@ def test_new_file_with_same_mtime_and_size_is_still_taken(tmp_path):
 
 
 def test_deeply_nested_outbox_does_not_raise(tmp_path, caplog):
-    box = Mailbox(tmp_path)
+    box = Mailbox(tmp_path, wall_clock=later)
     (tmp_path / OUTBOX).write_text("[" * 100_000 + "]" * 100_000, encoding="utf-8")
     assert box.take_outbox() is None
     assert "ignoré" in caplog.text
