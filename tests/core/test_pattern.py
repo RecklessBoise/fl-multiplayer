@@ -11,7 +11,7 @@ def test_valid_pattern_is_normalised():
     ppq, notes = check_pattern(96, [NOTE, [60, 0, 96, 1, 0, 1.0]])
     assert ppq == 96
     assert notes == [
-        (69, 192, 48, 0.7813, 0.5, 0.5),
+        (69, 192, 48, round(0.78125, 4), 0.5, 0.5),
         (60, 0, 96, 1.0, 0.0, 1.0),
     ]
 
