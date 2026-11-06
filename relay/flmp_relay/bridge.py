@@ -176,6 +176,14 @@ class Relay:
                 log.exception("Erreur en envoyant un pattern")
 
     async def _send_outbox(self, mailbox: Mailbox) -> None:
+        flushed = mailbox.flush_inbox()
+        if flushed is not None:
+            log.info(
+                "Pattern reçu de %s (%s) : ouvrez le piano roll du même channel, puis "
+                "Tools > Scripting > FL Multiplayer - Recevoir",
+                clean(flushed[0]),
+                notes_label(flushed[1]),
+            )
         pattern = mailbox.take_outbox()
         if pattern is None:
             return
@@ -209,7 +217,9 @@ class Relay:
             log.warning("Impossible d'enregistrer le pattern reçu : %s", clean(str(exc), 120))
             return
         if not written:
-            log.warning("Pattern reçu de %s ignoré : trop rapproché du précédent", clean(name))
+            log.info(
+                "Pattern reçu de %s : mis en attente une seconde (trop rapproché)", clean(name)
+            )
             return
         log.info(
             "Pattern reçu de %s (%s) : ouvrez le piano roll du même channel, puis "

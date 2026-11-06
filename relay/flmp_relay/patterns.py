@@ -46,6 +46,7 @@ class Mailbox:
         self._clock = clock
         self._wall_clock = wall_clock
         self._last_inbox: float | None = None
+        self._held: tuple[str, int, list[tuple]] | None = None
         self.folder.mkdir(parents=True, exist_ok=True)
         self._outbox = self.folder / OUTBOX
         self._inbox = self.folder / INBOX
@@ -56,15 +57,15 @@ class Mailbox:
             st = self._outbox.stat()
         except OSError:
             return None
-        # The script replaces the file on each send: the inode changes even when
-        # the timestamp is too coarse to.
+        # The FL script writes in place (it can't rename), so mtime and size are the
+        # signals; the inode only helps if something else replaces the file.
         return st.st_mtime_ns, st.st_size, st.st_ino
 
     def take_outbox(self) -> Pattern | None:
         """The pattern written since the last call, validated, or None."""
         stamp = self._stamp()
-        if stamp is None or stamp == self._seen:
-            return None
+        if stamp is None or stamp == self._seen or stamp[1] == 0:
+            return None  # nothing new, or truncated by the script and not written yet
         if self._wall_clock() - stamp[0] / 1e9 < self.SETTLE:
             return None  # maybe still being written: look again on the next poll
         self._seen = stamp
@@ -81,14 +82,37 @@ class Mailbox:
             return None
 
     def write_inbox(self, sender: str, ppq: int, notes: list[tuple]) -> bool:
-        """Write a received pattern; False if it came too soon after the previous one."""
+        """Write a received pattern now (True), or hold it if it came too soon (False).
+
+        A held pattern is written by `flush_inbox` once the interval has passed; a
+        newer one replaces it (the latest pattern wins, none is silently lost).
+        """
         now = self._clock()
         if self._last_inbox is not None and now - self._last_inbox < self.INBOX_MIN_INTERVAL:
+            self._held = (sender, ppq, notes)
             return False
-        self._last_inbox = now
+        self._write(sender, ppq, notes)
+        self._last_inbox = now  # only once the write succeeded
+        self._held = None
+        return True
+
+    def flush_inbox(self) -> tuple[str, int] | None:
+        """Write the held pattern if its time has come; (sender, note count) or None."""
+        held = self._held
+        if held is None:
+            return None
+        if self._last_inbox is not None and (
+            self._clock() - self._last_inbox < self.INBOX_MIN_INTERVAL
+        ):
+            return None
+        self._write(*held)
+        self._last_inbox = self._clock()
+        self._held = None
+        return held[0], len(held[2])
+
+    def _write(self, sender: str, ppq: int, notes: list[tuple]) -> None:
         name = "".join(ch for ch in sender if ch.isprintable())[: self.NAME_MAX] or "?"
         data = {"flmp": 1, "from": name, "ppq": ppq, "notes": [list(n) for n in notes]}
         tmp = self.folder / ".inbox.tmp"
         tmp.write_text(json.dumps(data), encoding="utf-8")
         os.replace(tmp, self._inbox)  # the piano roll script never sees a half-written file
-        return True
