@@ -406,3 +406,48 @@ async def joined_observer_raw(url):
     await ws.send(json.dumps({"type": "join", "room": "ROOM1", "name": "Obs", "proto": 1}))
     await ws.recv()
     return ws
+
+
+# -- v0.2: piano roll patterns -------------------------------------------------
+
+
+def write_outbox(folder):
+    (folder / "outbox.json").write_text(
+        json.dumps({"flmp": 1, "ppq": 96, "notes": [[69, 192, 48, 0.78125, 0.5, 0.5]]}),
+        encoding="utf-8",
+    )
+
+
+async def _settle_snapshot(io):
+    """Answer the snapshot request FL gets when someone joins after us."""
+    assert decode(await io.fl_receives()).kind == "snapshot_req"
+    io.fl_sends(frame("snapshot_begin", None, 0))
+    io.fl_sends(frame("snapshot_end", None, 0))
+
+
+async def test_outbox_pattern_is_sent_to_the_room(server, clients, tmp_path):
+    url = await server()
+    io = QueueMidiIO()
+    async with running(Relay(io, url, "ROOM1", "Alice", exchange_dir=tmp_path)):
+        obs = await joined_observer(clients, url)
+        await _settle_snapshot(io)
+        write_outbox(tmp_path)
+        msg = await obs.recv_type("pattern")
+        assert msg["ppq"] == 96 and msg["notes"] == [[69, 192, 48, round(0.78125, 4), 0.5, 0.5]]
+
+
+async def test_received_pattern_lands_in_the_inbox(server, clients, tmp_path):
+    url = await server()
+    io = QueueMidiIO()
+    async with running(Relay(io, url, "ROOM1", "Alice", exchange_dir=tmp_path)):
+        obs = await joined_observer(clients, url, name="Bob")
+        await _settle_snapshot(io)
+        await obs.send(type="pattern", ppq=192, notes=[[60, 0, 192, 1, 0.5, 0.5]])
+        inbox = tmp_path / "inbox.json"
+        for _ in range(100):
+            if inbox.exists():
+                break
+            await asyncio.sleep(0.02)
+        data = json.loads(inbox.read_text(encoding="utf-8"))
+        assert data["from"] == "Bob" and data["ppq"] == 192
+        assert data["notes"] == [[60, 0, 192, 1.0, 0.5, 0.5]]
