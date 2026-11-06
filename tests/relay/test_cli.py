@@ -172,3 +172,44 @@ class TestInstallScriptSafety:
         (dest / "device_FLMultiplayer.py").symlink_to(target)
         assert cli.main(["install-script", "--dest", str(dest)]) == 1
         assert target.read_text() == "original"
+
+
+class TestPianoRollScripts:
+    NAMES = ("FL Multiplayer - Envoyer.pyscript", "FL Multiplayer - Recevoir.pyscript")
+
+    def test_installed_next_to_the_hardware_script(self, tmp_path):
+        dest, pr = tmp_path / "FL Multiplayer", tmp_path / "Piano roll scripts"
+        args = ["install-script", "--dest", str(dest), "--piano-roll-dest", str(pr)]
+        assert cli.main(args) == 0
+        files = tuple(sorted(p.name for p in pr.iterdir() if p.is_file()))
+        assert files == self.NAMES
+        assert (pr / "FL Multiplayer").is_dir()  # exchange folder: FL scripts can't mkdir
+
+    def test_custom_dest_alone_never_touches_the_default_folder(self, tmp_path, monkeypatch):
+        default = tmp_path / "default"
+        monkeypatch.setattr(cli, "default_piano_roll_dir", lambda: default)
+        assert cli.main(["install-script", "--dest", str(tmp_path / "FL Multiplayer")]) == 0
+        assert not default.exists()
+
+    def test_refuses_symlinked_piano_roll_script(self, tmp_path):
+        pr = tmp_path / "Piano roll scripts"
+        pr.mkdir()
+        target = tmp_path / "victim.txt"
+        target.write_text("original")
+        (pr / self.NAMES[0]).symlink_to(target)
+        args = ["install-script", "--dest", str(tmp_path / "FL Multiplayer")]
+        assert cli.main([*args, "--piano-roll-dest", str(pr)]) == 1
+        assert target.read_text() == "original"
+
+    def test_default_folders(self):
+        assert cli.default_piano_roll_dir().parts[-4:] == (
+            "Image-Line",
+            "FL Studio",
+            "Settings",
+            "Piano roll scripts",
+        )
+        assert cli.default_exchange_dir() == cli.default_piano_roll_dir() / "FL Multiplayer"
+
+    def test_join_uses_the_exchange_folder(self):
+        args = cli.parse_args(["join", "--server", "wss://x.org", "--room", "abcd", "--name", "A"])
+        assert args.exchange_dir == cli.default_exchange_dir()

@@ -56,6 +56,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="créer soi-même les ports « FLMP In » / « FLMP Out », sans bus IAC (macOS, Linux)",
     )
+    join.add_argument(
+        "--exchange-dir",
+        type=Path,
+        default=default_exchange_dir(),
+        help="dossier d'échange avec les scripts de piano roll",
+    )
     ports(join)
 
     mon = sub.add_parser("monitor", help="faux participant pour tester avec un seul FL")
@@ -75,6 +81,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--force",
         action="store_true",
         help="accepter un dossier cible d'un autre nom",
+    )
+    install.add_argument(
+        "--piano-roll-dest",
+        type=Path,
+        default=None,
+        help="dossier des scripts de piano roll (par défaut : celui de FL, sauf avec --dest)",
     )
 
     doctor = sub.add_parser("doctor", help="vérifier l'installation")
@@ -100,6 +112,40 @@ def default_script_dir() -> Path:
         / "Hardware"
         / "FL Multiplayer"
     )
+
+
+def default_piano_roll_dir() -> Path:
+    return (
+        Path.home() / "Documents" / "Image-Line" / "FL Studio" / "Settings" / "Piano roll scripts"
+    )
+
+
+def default_exchange_dir() -> Path:
+    """Where the piano roll scripts and the relay exchange patterns (v0.2)."""
+    return default_piano_roll_dir() / "FL Multiplayer"
+
+
+PIANO_ROLL_SCRIPTS = ("FL Multiplayer - Envoyer.pyscript", "FL Multiplayer - Recevoir.pyscript")
+
+
+def _piano_roll_source() -> Path:
+    packaged = resources.files("flmp_relay") / "fl_script" / "piano_roll"
+    if packaged.is_dir():
+        return Path(str(packaged))
+    return Path(flmp_core.__file__).resolve().parent.parent / "piano_roll"
+
+
+def install_piano_roll_scripts(dest: Path) -> Path:
+    """Copy the Envoyer/Recevoir piano roll scripts into `dest` (symlinks refused)."""
+    source = _piano_roll_source()
+    for name in PIANO_ROLL_SCRIPTS:
+        if (dest / name).is_symlink() or dest.is_symlink():
+            raise OSError(f"{dest / name} est un lien symbolique : refus de l'écraser")
+    dest.mkdir(parents=True, exist_ok=True)
+    for name in PIANO_ROLL_SCRIPTS:
+        shutil.copyfile(source / name, dest / name)
+    (dest / "FL Multiplayer").mkdir(exist_ok=True)  # exchange folder: FL's Python can't mkdir
+    return dest
 
 
 def _script_source() -> Path:
@@ -240,7 +286,15 @@ async def _join(args: argparse.Namespace, secret: str | None) -> None:
     loop = asyncio.get_running_loop()
     midi = MidoMidiIO.open(args.in_port, args.out_port, loop, virtual=args.virtual)
     try:
-        relay = Relay(midi, args.server, args.room, args.name, secret, allow_insecure=args.insecure)
+        relay = Relay(
+            midi,
+            args.server,
+            args.room,
+            args.name,
+            secret,
+            allow_insecure=args.insecure,
+            exchange_dir=args.exchange_dir,
+        )
         await relay.run()
     finally:
         midi.close()
@@ -265,12 +319,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "install-script":
         dest = args.dest or default_script_dir()
+        # A custom --dest alone (tests, unusual setups) never writes to FL's real folders.
+        pr_dest = args.piano_roll_dest or (None if args.dest else default_piano_roll_dir())
         try:
             install_script(dest, force=args.force)
+            if pr_dest is not None:
+                install_piano_roll_scripts(pr_dest)
         except OSError as exc:
             print(f"Installation impossible : {exc}", file=sys.stderr)
             return 1
         print(f"Script installé dans : {dest}")
+        if pr_dest is not None:
+            print(f"Scripts de piano roll installés dans : {pr_dest}")
         print(
             "Redémarrez FL Studio, puis choisissez « FL Multiplayer » dans Options > MIDI settings."
         )

@@ -1,0 +1,71 @@
+"""FL Multiplayer - Envoyer : envoie les notes de ce piano roll à l'autre participant.
+
+Le relais (« flmp join ») doit tourner : il récupère les notes et les envoie au salon.
+Chez l'autre, « FL Multiplayer - Recevoir » les place dans son piano roll.
+Projet indépendant, non affilié à Image-Line.
+"""
+
+import json
+import os
+
+import flpianoroll as flp
+
+EXCHANGE_DIR = os.path.join(
+    os.path.expanduser("~"),
+    "Documents",
+    "Image-Line",
+    "FL Studio",
+    "Settings",
+    "Piano roll scripts",
+    "FL Multiplayer",
+)
+MAX_NOTES = 4000
+
+# No createDialog on purpose: with a dialog, FL runs apply() in preview as soon as
+# it opens and on every change, which would send the pattern several times.
+
+
+def _unit(x):
+    return round(min(1.0, max(0.0, float(x))), 4)
+
+
+def _plural(n):
+    return "1 note" if n == 1 else str(n) + " notes"
+
+
+def apply(form=None):
+    count = flp.score.noteCount
+    every = [flp.score.getNote(i) for i in range(count)]
+    selected = [n for n in every if n.selected]
+    notes = [
+        [int(n.number), int(n.time), int(n.length), _unit(n.velocity), _unit(n.pan),
+         _unit(n.release)]
+        for n in (selected or every)  # like FL's tools: the selection, or else everything
+    ]
+    if not notes:
+        flp.Utils.ShowMessage("Aucune note à envoyer.")
+        return
+    ppq = int(flp.score.PPQ)
+    if not 24 <= ppq <= 1920:
+        flp.Utils.ShowMessage("Cette résolution (PPQ " + str(ppq) + ") n'est pas prise en charge.")
+        return
+    if len(notes) > MAX_NOTES:
+        flp.Utils.ShowMessage("Trop de notes (" + str(len(notes)) + ") : 4000 au maximum.")
+        return
+    if not os.path.isdir(EXCHANGE_DIR):  # FL's Python can't create folders: the relay does
+        flp.Utils.ShowMessage(
+            "Dossier d'échange introuvable. Lancez d'abord le relais (flmp join), puis réessayez."
+        )
+        return
+    # FL's Python can't rename files (os.replace fails): write in place, in one go.
+    # The relay waits until the file has settled before reading it.
+    data = json.dumps({"flmp": 1, "ppq": ppq, "notes": notes})
+    with open(os.path.join(EXCHANGE_DIR, "outbox.json"), "w", encoding="utf-8") as f:
+        f.write(data)
+    one = len(notes) == 1
+    what = ("sélectionnée" if one else "sélectionnées") if selected else "du pattern"
+    ready = "prête" if one else "prêtes"
+    flp.Utils.ShowMessage(
+        _plural(len(notes)) + " " + what + " " + ready + " à partir. Le Terminal du relais doit "
+        "afficher « Pattern envoyé ». Votre partenaire lance ensuite « FL Multiplayer - Recevoir »."
+    )

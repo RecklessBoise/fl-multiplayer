@@ -23,6 +23,7 @@ from typing import Any
 
 from flmp_core import PROTOCOL_VERSION
 from flmp_core.messages import ProtocolError, parse_fields
+from flmp_core.pattern import check_pattern
 from websockets.asyncio.server import Server, ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request, Response
@@ -43,6 +44,8 @@ class Settings:
     max_rooms: int = 1000
     rate_per_second: float = 200.0
     rate_burst: int = 400
+    pattern_rate: float = 1.0  # piano roll patterns can be large: their own budget
+    pattern_burst: int = 3
     join_timeout: float = 10.0
     snapshot_timeout: float = 10.0
     max_snapshot_changes: int = 20000
@@ -87,6 +90,7 @@ class Peer:
         self.name = ""
         self.room: Room | None = None
         self.bucket = TokenBucket(settings.rate_per_second, settings.rate_burst)
+        self.pattern_bucket = TokenBucket(settings.pattern_rate, settings.pattern_burst)
         self.queue: asyncio.Queue[str | None] = asyncio.Queue(settings.send_queue_size)
         self.closing = False
         self.dropped = 0
@@ -266,13 +270,15 @@ class Hub:
             peer.push({"type": "hello", "server": "flmp", "proto": PROTOCOL_VERSION})
         elif kind == "join":
             self._join(peer, msg)
-        elif kind in ("change", "snapshot"):
+        elif kind in ("change", "snapshot", "pattern"):
             if peer.room is None:
                 raise ClientError("not_joined", "join a room first")
             if kind == "change":
                 self._change(peer, peer.room, msg)
-            else:
+            elif kind == "snapshot":
                 self._snapshot(peer, peer.room, msg)
+            else:
+                self._pattern(peer, peer.room, msg)
         else:
             raise ClientError("bad_message", "unknown message type")
 
@@ -365,6 +371,20 @@ class Hub:
                 "seq": room.seq,
                 "from": peer.id,
             }
+        )
+
+    def _pattern(self, peer: Peer, room: Room, msg: dict[str, Any]) -> None:
+        """A piano roll pattern: relayed to the others as is, never stored."""
+        if not peer.pattern_bucket.take():
+            peer.push(_error("rate_limited", "too many patterns, this one was dropped"))
+            return
+        try:
+            ppq, notes = check_pattern(msg.get("ppq"), msg.get("notes"))
+        except ProtocolError as exc:
+            raise ClientError("bad_message", f"pattern: {exc}") from exc
+        room.broadcast(
+            {"type": "pattern", "from": peer.id, "ppq": ppq, "notes": [list(n) for n in notes]},
+            exclude=peer.id,
         )
 
     def _snapshot(self, peer: Peer, room: Room, msg: dict[str, Any]) -> None:

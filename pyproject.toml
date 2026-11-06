@@ -32,6 +32,7 @@ packages = ["fl_script/flmp_core", "relay/flmp_relay", "server/flmp_server"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "fl_script/device_FLMultiplayer.py" = "flmp_relay/fl_script/device_FLMultiplayer.py"
+"fl_script/piano_roll" = "flmp_relay/fl_script/piano_roll"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
