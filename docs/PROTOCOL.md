@@ -83,6 +83,9 @@ Note : 16383 est impair, donc un pan centré se relit à environ 6e-5 près de 0
 - Validation commune au relais et au serveur (`flmp_core.pattern`) : `ppq` entier de 24 à 1920 ;
   au plus 4000 notes ; hauteur 0–131 ; temps et durée entiers de 0 à 2³¹−1 ; vélocité, pan et
   release entre 0 et 1. Un pattern invalide est refusé (`bad_message`) et n'est pas relayé.
+- Limites : le serveur accepte environ **un pattern par seconde** et par participant (rafale de
+  3), en plus de la limite générale ; au-delà, `rate_limited` et le pattern n'est pas relayé. Le
+  relais n'écrit pas plus d'un pattern reçu par seconde dans `inbox.json`.
 - Côté Mac, le script de piano roll « Envoyer » écrit `outbox.json` dans
   `Piano roll scripts/FL Multiplayer/` ; le relais l'envoie dès qu'il change (pas au démarrage).
   À la réception, le relais écrit `inbox.json` d'un seul coup (fichier temporaire puis

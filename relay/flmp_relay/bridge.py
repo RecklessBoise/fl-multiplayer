@@ -170,24 +170,28 @@ class Relay:
             return
         while True:
             await asyncio.sleep(interval)
-            pattern = mailbox.take_outbox()
-            if pattern is None:
-                continue
-            ws = self._live
-            if ws is None:
-                log.warning(
-                    "Pas connecté au salon : pattern non envoyé. Renvoyez-le une fois connecté."
-                )
-                continue
-            ppq, notes = pattern
-            msg = {"type": "pattern", "ppq": ppq, "notes": [list(n) for n in notes]}
             try:
-                await ws.send(json.dumps(msg))
-                log.info("Pattern envoyé (%d notes)", len(notes))
-            except ConnectionClosed:
-                log.warning(
-                    "Connexion perdue : pattern non envoyé. Renvoyez-le une fois reconnecté."
-                )
+                await self._send_outbox(mailbox)
+            except Exception:  # never let the watcher die silently
+                log.exception("Erreur en envoyant un pattern")
+
+    async def _send_outbox(self, mailbox: Mailbox) -> None:
+        pattern = mailbox.take_outbox()
+        if pattern is None:
+            return
+        ws = self._live
+        if ws is None:
+            log.warning(
+                "Pas connecté au salon : pattern non envoyé. Renvoyez-le une fois connecté."
+            )
+            return
+        ppq, notes = pattern
+        msg = {"type": "pattern", "ppq": ppq, "notes": [list(n) for n in notes]}
+        try:
+            await ws.send(json.dumps(msg))
+            log.info("Pattern envoyé (%d notes)", len(notes))
+        except ConnectionClosed:
+            log.warning("Connexion perdue : pattern non envoyé. Renvoyez-le une fois reconnecté.")
 
     def _on_pattern(self, msg: dict[str, Any]) -> None:
         if self._mailbox is None:
@@ -199,7 +203,14 @@ class Relay:
             return
         sender = msg.get("from")
         name = self._names.get(sender, "?") if isinstance(sender, str) else "?"
-        self._mailbox.write_inbox(name, ppq, notes)
+        try:
+            written = self._mailbox.write_inbox(name, ppq, notes)
+        except OSError as exc:
+            log.warning("Impossible d'enregistrer le pattern reçu : %s", clean(str(exc), 120))
+            return
+        if not written:
+            log.warning("Pattern reçu de %s ignoré : trop rapproché du précédent", clean(name))
+            return
         log.info(
             "Pattern reçu de %s (%d notes) : ouvrez le piano roll du même channel, puis "
             "Tools > Scripting > FL Multiplayer - Recevoir",

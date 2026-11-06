@@ -53,15 +53,3 @@ def check_pattern(ppq: object, notes: object) -> tuple:
     if not isinstance(notes, list) or len(notes) > MAX_NOTES:
         raise ProtocolError(f"notes must be a list of at most {MAX_NOTES} notes")
     return ppq, [_note(n) for n in notes]
-
-
-def rescale(notes: list, from_ppq: int, to_ppq: int) -> list:
-    """Convert note times from one resolution to another (lengths stay >= 1)."""
-    if from_ppq == to_ppq:
-        return list(notes)
-    out = []
-    for pitch, time, length, velocity, pan, release in notes:
-        new_time = time * to_ppq // from_ppq
-        new_length = max(1, length * to_ppq // from_ppq) if length else 0
-        out.append((pitch, new_time, new_length, velocity, pan, release))
-    return out

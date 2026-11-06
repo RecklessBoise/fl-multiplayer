@@ -44,6 +44,8 @@ class Settings:
     max_rooms: int = 1000
     rate_per_second: float = 200.0
     rate_burst: int = 400
+    pattern_rate: float = 1.0  # piano roll patterns can be large: their own budget
+    pattern_burst: int = 3
     join_timeout: float = 10.0
     snapshot_timeout: float = 10.0
     max_snapshot_changes: int = 20000
@@ -88,6 +90,7 @@ class Peer:
         self.name = ""
         self.room: Room | None = None
         self.bucket = TokenBucket(settings.rate_per_second, settings.rate_burst)
+        self.pattern_bucket = TokenBucket(settings.pattern_rate, settings.pattern_burst)
         self.queue: asyncio.Queue[str | None] = asyncio.Queue(settings.send_queue_size)
         self.closing = False
         self.dropped = 0
@@ -372,6 +375,9 @@ class Hub:
 
     def _pattern(self, peer: Peer, room: Room, msg: dict[str, Any]) -> None:
         """A piano roll pattern: relayed to the others as is, never stored."""
+        if not peer.pattern_bucket.take():
+            peer.push(_error("rate_limited", "too many patterns, this one was dropped"))
+            return
         try:
             ppq, notes = check_pattern(msg.get("ppq"), msg.get("notes"))
         except ProtocolError as exc:
