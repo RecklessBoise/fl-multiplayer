@@ -92,5 +92,7 @@ def apply(form):
         n.pan = pan
         n.release = release
         flp.score.addNote(n)
-    count = "1 note" if len(notes) == 1 else str(len(notes)) + " notes"
-    flp.Utils.ShowMessage(count + " de " + sender + " placées dans ce piano roll.")
+    if len(notes) == 1:
+        flp.Utils.ShowMessage("1 note de " + sender + " placée dans ce piano roll.")
+    else:
+        flp.Utils.ShowMessage(str(len(notes)) + " notes de " + sender + " placées dans ce piano roll.")

@@ -30,7 +30,7 @@ from websockets.exceptions import ConnectionClosed
 
 from flmp_relay.lww import OwnWrites
 from flmp_relay.midi import MidiIO
-from flmp_relay.patterns import Mailbox
+from flmp_relay.patterns import Mailbox, notes_label
 
 log = logging.getLogger("flmp.relay")
 
@@ -189,7 +189,7 @@ class Relay:
         msg = {"type": "pattern", "ppq": ppq, "notes": [list(n) for n in notes]}
         try:
             await ws.send(json.dumps(msg))
-            log.info("Pattern envoyé (%d notes)", len(notes))
+            log.info("Pattern envoyé (%s)", notes_label(len(notes)))
         except ConnectionClosed:
             log.warning("Connexion perdue : pattern non envoyé. Renvoyez-le une fois reconnecté.")
 
@@ -212,10 +212,10 @@ class Relay:
             log.warning("Pattern reçu de %s ignoré : trop rapproché du précédent", clean(name))
             return
         log.info(
-            "Pattern reçu de %s (%d notes) : ouvrez le piano roll du même channel, puis "
+            "Pattern reçu de %s (%s) : ouvrez le piano roll du même channel, puis "
             "Tools > Scripting > FL Multiplayer - Recevoir",
             clean(name),
-            len(notes),
+            notes_label(len(notes)),
         )
 
     async def stop(self) -> None:

@@ -62,8 +62,10 @@ def apply(form=None):
     data = json.dumps({"flmp": 1, "ppq": ppq, "notes": notes})
     with open(os.path.join(EXCHANGE_DIR, "outbox.json"), "w", encoding="utf-8") as f:
         f.write(data)
-    what = "sélectionnées" if selected else "du pattern"
+    one = len(notes) == 1
+    what = ("sélectionnée" if one else "sélectionnées") if selected else "du pattern"
+    ready = "prête" if one else "prêtes"
     flp.Utils.ShowMessage(
-        _plural(len(notes)) + " " + what + " prêtes à partir. Le Terminal du relais doit "
+        _plural(len(notes)) + " " + what + " " + ready + " à partir. Le Terminal du relais doit "
         "afficher « Pattern envoyé ». Votre partenaire lance ensuite « FL Multiplayer - Recevoir »."
     )

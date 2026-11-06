@@ -26,6 +26,10 @@ INBOX = "inbox.json"
 Pattern = tuple[int, list[tuple]]
 
 
+def notes_label(count: int) -> str:
+    return f"{count} note" if count == 1 else f"{count} notes"
+
+
 class Mailbox:
     MAX_BYTES = 512 * 1024  # 4000 notes fit easily
     INBOX_MIN_INTERVAL = 1.0  # a peer can't keep overwriting the inbox
