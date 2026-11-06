@@ -123,9 +123,9 @@ FL ne permet pas aux scripts de suivre les notes **pendant** qu'on les dessine. 
 envoie donc à la demande, en deux clics. Les deux relais doivent tourner.
 
 1. **Chez celui qui envoie :** ouvrez le piano roll du pattern, puis, dans le menu du piano roll
-   (la petite flèche en haut à gauche), **Tools > Scripting > FL Multiplayer - Envoyer**. Cochez
-   « Seulement les notes sélectionnées » pour n'envoyer qu'une partie. Le Terminal du relais
-   affiche « Pattern envoyé (N notes) ».
+   (la petite flèche en haut à gauche), **Tools > Scripting > FL Multiplayer - Envoyer**. Comme
+   les outils de FL, il envoie **les notes sélectionnées s'il y en a, sinon tout le pattern**. Le
+   Terminal du relais affiche « Pattern envoyé (N notes) ».
 2. **Chez l'autre :** son Terminal affiche « Pattern reçu de … ». Il ouvre le piano roll **du même
    channel** (le script ne peut pas le choisir lui-même), puis **Tools > Scripting > FL
    Multiplayer - Recevoir**, et choisit :

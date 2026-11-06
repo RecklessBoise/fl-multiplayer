@@ -112,7 +112,7 @@ def test_default_exchange_dir_matches_the_relay(fl):
 # -- Envoyer -------------------------------------------------------------------------
 
 
-def test_send_has_no_dialog_so_it_runs_once():
+def test_send_has_no_dialog_so_it_runs_once(fl):
     # With a dialog, FL runs the script in preview on open and on every change:
     # that would send several times, before the user even clicks Accept.
     ns = {"__name__": "pyscript"}

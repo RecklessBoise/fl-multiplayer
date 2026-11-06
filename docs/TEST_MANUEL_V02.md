@@ -19,13 +19,14 @@ voyez.
 ## C. Envoyer un pattern
 
 - [ ] **C1.** A dessine 3 ou 4 notes dans le piano roll d'un channel, puis, menu du piano roll
-  > **Tools > Scripting > FL Multiplayer - Envoyer** > OK. Son Terminal affiche « Pattern envoyé ».
+  > **Tools > Scripting > FL Multiplayer - Envoyer** (sans rien sélectionner). Son Terminal affiche
+  « Pattern envoyé ».
 - [ ] **C2.** Le Terminal de B affiche « Pattern reçu de A (N notes) ».
 - [ ] **C3.** B ouvre le piano roll **du même channel**, puis **Tools > Scripting > FL
   Multiplayer - Recevoir**, mode **Remplacer les notes** > OK : les notes de A apparaissent, aux
   mêmes hauteurs et positions.
-- [ ] **C4.** Refaites C1–C3 en sélectionnant seulement 2 notes chez A et en cochant « Seulement
-  les notes sélectionnées », puis mode **Ajouter aux notes** chez B : les 2 notes s'ajoutent.
+- [ ] **C4.** Refaites C1–C3 en sélectionnant seulement 2 notes chez A avant « Envoyer », puis
+  mode **Ajouter aux notes** chez B : seules ces 2 notes s'ajoutent.
 - [ ] **C5.** Dans l'autre sens (B envoie, A reçoit).
 
 ## À me renvoyer

@@ -144,6 +144,7 @@ def install_piano_roll_scripts(dest: Path) -> Path:
     dest.mkdir(parents=True, exist_ok=True)
     for name in PIANO_ROLL_SCRIPTS:
         shutil.copyfile(source / name, dest / name)
+    (dest / "FL Multiplayer").mkdir(exist_ok=True)  # exchange folder: FL's Python can't mkdir
     return dest
 
 

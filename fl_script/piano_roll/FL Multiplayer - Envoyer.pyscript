@@ -19,17 +19,10 @@ EXCHANGE_DIR = os.path.join(
     "Piano roll scripts",
     "FL Multiplayer",
 )
-SELECTED = "Seulement les notes sélectionnées"
 MAX_NOTES = 4000
 
-
-def createDialog():
-    form = flp.ScriptDialog(
-        "FL Multiplayer - Envoyer",
-        "Envoie les notes de ce pattern à l'autre participant. Le relais doit tourner.",
-    )
-    form.AddInputCheckbox(SELECTED, False, "N'envoyer que les notes sélectionnées")
-    return form
+# No createDialog on purpose: with a dialog, FL runs apply() in preview as soon as
+# it opens and on every change, which would send the pattern several times.
 
 
 def _unit(x):
@@ -40,17 +33,15 @@ def _plural(n):
     return "1 note" if n == 1 else str(n) + " notes"
 
 
-def apply(form):
-    only_selected = bool(form.GetInputValue(SELECTED))
-    notes = []
-    for i in range(flp.score.noteCount):
-        n = flp.score.getNote(i)
-        if only_selected and not n.selected:
-            continue
-        notes.append(
-            [int(n.number), int(n.time), int(n.length), _unit(n.velocity), _unit(n.pan),
-             _unit(n.release)]
-        )
+def apply(form=None):
+    count = flp.score.noteCount
+    every = [flp.score.getNote(i) for i in range(count)]
+    selected = [n for n in every if n.selected]
+    notes = [
+        [int(n.number), int(n.time), int(n.length), _unit(n.velocity), _unit(n.pan),
+         _unit(n.release)]
+        for n in (selected or every)  # like FL's tools: the selection, or else everything
+    ]
     if not notes:
         flp.Utils.ShowMessage("Aucune note à envoyer.")
         return
@@ -61,12 +52,17 @@ def apply(form):
     if len(notes) > MAX_NOTES:
         flp.Utils.ShowMessage("Trop de notes (" + str(len(notes)) + ") : 4000 au maximum.")
         return
-    os.makedirs(EXCHANGE_DIR, exist_ok=True)
+    if not os.path.isdir(EXCHANGE_DIR):  # FL's Python can't create folders: the relay does
+        flp.Utils.ShowMessage(
+            "Dossier d'échange introuvable. Lancez d'abord le relais (flmp join), puis réessayez."
+        )
+        return
     tmp = os.path.join(EXCHANGE_DIR, ".outbox.tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump({"flmp": 1, "ppq": ppq, "notes": notes}, f)
     os.replace(tmp, os.path.join(EXCHANGE_DIR, "outbox.json"))
+    what = "sélectionnées" if selected else "du pattern"
     flp.Utils.ShowMessage(
-        _plural(len(notes)) + " prêtes à partir. Le Terminal du relais doit afficher "
-        "« Pattern envoyé ». Votre partenaire lance ensuite « FL Multiplayer - Recevoir »."
+        _plural(len(notes)) + " " + what + " prêtes à partir. Le Terminal du relais doit "
+        "afficher « Pattern envoyé ». Votre partenaire lance ensuite « FL Multiplayer - Recevoir »."
     )
