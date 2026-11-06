@@ -7,6 +7,7 @@ server on localhost.
 
 import asyncio
 import contextlib
+import json
 
 from flmp_core.messages import NETWORK_KINDS, Change, decode, encode
 from flmp_core.state import StateTracker
@@ -88,7 +89,8 @@ async def session(*fls, port=0, **relay_kw):
     try:
         for fl in fls:
             fl.start()
-            relay = Relay(fl.io, url, "JAM42", fl.name, backoff=(0.05,), **relay_kw)
+            extra = {"exchange_dir": fl.exchange_dir} if getattr(fl, "exchange_dir", None) else {}
+            relay = Relay(fl.io, url, "JAM42", fl.name, backoff=(0.05,), **relay_kw, **extra)
             ctx["relays"].append(relay)
             tasks.append(asyncio.create_task(relay.run()))
             await asyncio.wait_for(relay.connected.wait(), 2)
@@ -200,3 +202,21 @@ async def test_sync_resumes_after_server_restart(unused_tcp_port):
         a.user_sets("mix_mute", 3, 1)
         await settle()
         assert b.state[("mix_mute", 3)] == 1
+
+
+async def test_pattern_sent_by_a_reaches_b_inbox(tmp_path):
+    a, b = FakeFL("Alice", project()), FakeFL("Bob", project())
+    a.exchange_dir, b.exchange_dir = tmp_path / "a", tmp_path / "b"
+    async with session(a, b):
+        notes = [[60, 0, 96, 0.8, 0.5, 0.5], [64, 96, 96, 0.8, 0.5, 0.5]]
+        (a.exchange_dir / "outbox.json").write_text(
+            json.dumps({"flmp": 1, "ppq": 96, "notes": notes}), encoding="utf-8"
+        )
+        inbox = b.exchange_dir / "inbox.json"
+        for _ in range(100):
+            if inbox.exists():
+                break
+            await asyncio.sleep(0.02)
+        data = json.loads(inbox.read_text(encoding="utf-8"))
+        assert data["from"] == "Alice" and data["notes"] == notes
+        assert not (a.exchange_dir / "inbox.json").exists()  # not echoed to the sender
