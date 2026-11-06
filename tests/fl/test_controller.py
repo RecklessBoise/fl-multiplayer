@@ -52,63 +52,11 @@ def test_init_sends_nothing():
     assert out == []
 
 
-def test_local_play_sends_position_then_stop():
-    ctl, fl, out = make(pos=960)
-    fl.playing = True
-    ctl.on_idle()
-    fl.playing = False
-    ctl.on_idle()
-    assert out == [Change("play", None, 960), Change("stop", None, 0)]
-
-
-def test_play_without_song_pos_api_sends_zero():
-    ctl, fl, out = make(has_song_pos=False)
-    fl.playing = True
-    ctl.on_idle()
-    assert out == [Change("play", None, 0)]
-
-
 def test_local_tempo_change_is_sent():
     ctl, fl, out = make()
     fl.tempo = 128500
     ctl.on_idle()
     assert out == [Change("tempo", None, 128500)]
-
-
-def test_remote_play_starts_fl_at_position_without_echo():
-    ctl, fl, out = make()
-    assert ctl.on_sysex(encode(Change("play", None, 1920))) is True
-    assert fl.calls == [("play_from", 1920)]
-    for _ in range(5):
-        ctl.on_idle()
-    assert out == []
-
-
-def test_remote_stop_without_echo():
-    ctl, fl, out = make(playing=True)
-    ctl.on_sysex(encode(Change("stop", None, 0)))
-    assert fl.calls == [("stop",)]
-    ctl.on_idle()
-    assert out == []
-
-
-def test_remote_play_while_fl_lags_is_not_echoed_as_stop():
-    ctl, fl, out = make()
-    fl.play_from = lambda pos: fl.calls.append(("play_from", pos))  # FL starts later
-    ctl.on_sysex(encode(Change("play", None, 0)))
-    ctl.on_idle()  # still stopped: must not send "stop"
-    fl.playing = True
-    ctl.on_idle()
-    assert out == []
-
-
-def test_user_stops_after_remote_play_is_sent():
-    ctl, fl, out = make()
-    ctl.on_sysex(encode(Change("play", None, 0)))
-    ctl.on_idle()
-    fl.playing = False
-    ctl.on_idle()
-    assert out == [Change("stop", None, 0)]
 
 
 def test_remote_tempo_applied_without_echo():
@@ -167,52 +115,12 @@ def test_incoming_snapshot_is_applied_without_echo():
 def test_errors_in_fl_calls_do_not_escape():
     ctl, fl, _out = make()
 
-    def boom(_pos):
+    def boom(_change):
         raise RuntimeError("FL said no")
 
-    fl.play_from = boom
-    assert ctl.on_sysex(encode(Change("play", None, 0))) is True
+    fl.apply = boom
+    assert ctl.on_sysex(encode(Change("tempo", None, 90000))) is True
     assert ctl.last_error is not None
-
-
-def test_slow_fl_never_echoes_a_stop_or_late_play():
-    ctl, fl, out = make()
-    fl.play_from = lambda pos: None  # FL takes a long time to start
-    ctl.on_sysex(encode(Change("play", None, 0)))
-    for _ in range(20):
-        ctl.on_idle()
-    fl.playing = True  # finally starts
-    for _ in range(3):
-        ctl.on_idle()
-    assert out == []
-
-
-def test_fl_that_never_follows_is_resynced_silently():
-    ctl, fl, out = make()
-    fl.play_from = lambda pos: None
-    ctl.on_sysex(encode(Change("play", None, 0)))
-    for _ in range(200):
-        ctl.on_idle()
-    assert out == []
-    fl.playing = True  # now a genuine local play, long after
-    ctl.on_idle()
-    assert out == [Change("play", None, 0)]
-
-
-def test_failed_play_from_leaves_transport_state_untouched():
-    ctl, fl, out = make()
-
-    def boom(_pos):
-        raise RuntimeError("no")
-
-    fl.play_from = boom
-    ctl.on_sysex(encode(Change("play", None, 0)))
-    ctl.on_idle()
-    assert out == []
-    fl.play_from = FakeFL.play_from.__get__(fl)
-    fl.playing = True  # user presses play
-    ctl.on_idle()
-    assert out == [Change("play", None, 0)]
 
 
 def test_repeated_identical_errors_are_logged_once():
@@ -238,3 +146,32 @@ def test_remote_tempo_outside_fl_range_is_rejected():
     ctl.on_sysex(encode(Change("tempo", None, 10000)))
     ctl.on_sysex(encode(Change("tempo", None, 522000)))
     assert fl.calls == [("tempo", 10000), ("tempo", 522000)]
+
+
+# -- v0.2: each user's transport is independent --------------------------------
+
+
+def test_local_play_and_stop_are_not_sent():
+    ctl, fl, out = make(pos=960)
+    fl.playing = True
+    ctl.on_idle()
+    fl.playing = False
+    ctl.on_idle()
+    assert out == []
+
+
+def test_remote_play_and_stop_are_ignored():
+    ctl, fl, out = make()
+    assert ctl.on_sysex(encode(Change("play", None, 1920))) is True  # ours, but ignored
+    assert ctl.on_sysex(encode(Change("stop", None, 0))) is True
+    ctl.on_idle()
+    assert fl.calls == []
+    assert out == []
+
+
+def test_tempo_is_still_synced_while_playing():
+    ctl, fl, out = make()
+    fl.playing = True
+    fl.tempo = 99000
+    ctl.on_idle()
+    assert out == [Change("tempo", None, 99000)]

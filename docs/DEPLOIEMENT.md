@@ -1,7 +1,7 @@
 # Mettre le serveur en ligne
 
 Le serveur de salons est le seul élément qui tourne sur Internet. Il ne reçoit que des réglages
-(tempo, lecture, mixer…), jamais d'audio ni de fichiers. **Une seule personne** l'installe ; les
+(tempo, mixer, channel rack…), jamais d'audio ni de fichiers. **Une seule personne** l'installe ; les
 autres se contentent de son adresse `wss://…`.
 
 Deux hébergeurs sont prêts à l'emploi :

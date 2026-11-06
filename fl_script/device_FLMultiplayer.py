@@ -1,6 +1,8 @@
 # name=FL Multiplayer
 # url=https://github.com/RecklessBoise/fl-multiplayer
-"""FL Multiplayer: MIDI controller script (transport, tempo, mixer, channel rack).
+"""FL Multiplayer: MIDI controller script (tempo, mixer, channel rack).
+
+Each user's transport (play, stop, position) stays local and is never synced.
 
 Install this file together with the `flmp_core` folder in
 ~/Documents/Image-Line/FL Studio/Settings/Hardware/FL Multiplayer/
@@ -8,10 +10,10 @@ FL adds the script's folder to its Python path, so `flmp_core` is importable.
 
 Not affiliated with Image-Line. Only FL Studio API functions documented at
 https://il-group.github.io/FL-Studio-API-Stubs/ are used:
-    transport.isPlaying / start / stop / getSongPos / setSongPos   (API 1; mode arg API 3)
     mixer.getCurrentTempo                                          (API 1)
     general.getVersion / processRECEvent, midi.REC_Tempo           (API 1)
     device.isAssigned / midiOutSysex                               (API 1)
+    ui.setHintMsg                                                  (API 1)
     mixer.getTrackInfo (TN_Master, TN_LastIns), getTrackVolume / setTrackVolume,
         getTrackPan / setTrackPan, isTrackSolo / soloTrack          (API 1)
     mixer.isTrackMuted / muteTrack                                 (API 2)
@@ -25,13 +27,11 @@ import device
 import general
 import midi
 import mixer
-import transport
+import ui
 
 from flmp_core.codec import pan_to_u14, u14_to_pan, u14_to_unit, unit_to_u14
 from flmp_core.controller import Controller
 
-SONGLENGTH_ABSTICKS = 2  # getSongPos/setSongPos mode: absolute ticks
-SONG_POS_MODE_API = 3  # the `mode` argument exists since API version 3
 MUTE_API = 2  # mixer.isTrackMuted / muteTrack
 GLOBAL_INDEX_API = 33  # channels.*(useGlobalIndex=True); channel sync needs it
 VERSION = "0.1.0"
@@ -52,24 +52,6 @@ class FLAdapter:
         self._mutes = {}
         self._frozen_mutes = None
         self._held_mutes = {}  # mutes received during a solo, applied after it
-
-    def is_playing(self):
-        return bool(transport.isPlaying())
-
-    def song_pos(self):
-        if self.api < SONG_POS_MODE_API:
-            return None
-        return int(transport.getSongPos(SONGLENGTH_ABSTICKS))
-
-    def play_from(self, pos):
-        if self.api >= SONG_POS_MODE_API:
-            transport.setSongPos(pos, SONGLENGTH_ABSTICKS)
-        if not transport.isPlaying():
-            transport.start()  # start() toggles play/pause, so only call it when stopped
-
-    def stop(self):
-        if transport.isPlaying():
-            transport.stop()
 
     def read_state(self):
         tempo = mixer.getCurrentTempo()
@@ -195,10 +177,12 @@ def _init():
     _controller = controller
     _log(f"FL Multiplayer {VERSION} chargé (API FL {adapter.api})")
     if not device.isAssigned():
-        _log(
+        warning = (
             "FL Multiplayer : aucune sortie MIDI reliée. Dans Options > MIDI settings, "
             "donnez à « FLMP Out » le même numéro de port que « FLMP In »."
         )
+        _log(warning)
+        ui.setHintMsg(warning)  # also in FL's hint bar, where it is easier to see
 
 
 def OnInit():
