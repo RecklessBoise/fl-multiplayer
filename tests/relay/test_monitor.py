@@ -102,3 +102,11 @@ def test_describe_rejects_out_of_range_values(kind, value):
     # A hostile server must not crash the monitor or make it print nonsense.
     msg = {"type": "change", "kind": kind, "index": 1, "value": value, "from": "p1"}
     assert describe(msg, {"p1": "Moi"}) == "Moi → valeur invalide ignorée"
+
+
+def test_describe_pattern():
+    msg = {"type": "pattern", "from": "p1", "ppq": 96, "notes": [[60, 0, 96, 0.8, 0.5, 0.5]]}
+    assert describe(msg, {"p1": "Moi"}) == "Moi → pattern de 1 note(s), PPQ 96"
+    assert describe({"type": "pattern", "from": "p1", "notes": "x"}, {}) == (
+        "? → pattern invalide ignoré"
+    )
