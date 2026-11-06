@@ -181,7 +181,9 @@ class TestPianoRollScripts:
         dest, pr = tmp_path / "FL Multiplayer", tmp_path / "Piano roll scripts"
         args = ["install-script", "--dest", str(dest), "--piano-roll-dest", str(pr)]
         assert cli.main(args) == 0
-        assert tuple(sorted(p.name for p in pr.iterdir())) == self.NAMES
+        files = tuple(sorted(p.name for p in pr.iterdir() if p.is_file()))
+        assert files == self.NAMES
+        assert (pr / "FL Multiplayer").is_dir()  # exchange folder: FL scripts can't mkdir
 
     def test_custom_dest_alone_never_touches_the_default_folder(self, tmp_path, monkeypatch):
         default = tmp_path / "default"

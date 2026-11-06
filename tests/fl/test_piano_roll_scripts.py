@@ -77,6 +77,9 @@ def load(path, exchange_dir):
 
 
 def run(ns, **inputs):
+    if "createDialog" not in ns:  # FL runs a script without dialog once, right away
+        ns["apply"]()
+        return
     form = ns["createDialog"]()
     form.inputs.update(inputs)
     ns["apply"](form)
@@ -109,6 +112,21 @@ def test_default_exchange_dir_matches_the_relay(fl):
 # -- Envoyer -------------------------------------------------------------------------
 
 
+def test_send_has_no_dialog_so_it_runs_once():
+    # With a dialog, FL runs the script in preview on open and on every change:
+    # that would send several times, before the user even clicks Accept.
+    ns = {"__name__": "pyscript"}
+    exec(compile(SEND.read_text(encoding="utf-8"), str(SEND), "exec"), ns)  # noqa: S102
+    assert "createDialog" not in ns
+
+
+@pytest.mark.parametrize("path", [SEND, RECEIVE])
+def test_scripts_never_create_folders(path):
+    # FL's embedded Python fails on mkdir (SystemError, seen in FL 2026).
+    source = path.read_text(encoding="utf-8")
+    assert "makedirs" not in source and "mkdir" not in source
+
+
 def test_send_writes_every_note(fl, tmp_path):
     fl.score.notes = [FakeNote(69, 192, 48), FakeNote(60, 0, 96, 1.0, 0.25, 0.75)]
     run(load(SEND, tmp_path))
@@ -122,28 +140,10 @@ def test_send_writes_every_note(fl, tmp_path):
     assert sorted(p.name for p in tmp_path.iterdir()) == ["outbox.json"]  # no temp file
 
 
-def test_send_selected_only(fl, tmp_path):
-    a, b = FakeNote(60), FakeNote(62)
-    b.selected = True
-    fl.score.notes = [a, b]
-    run(load(SEND, tmp_path), **{"Seulement les notes sélectionnées": True})
-    data = json.loads((tmp_path / "outbox.json").read_text(encoding="utf-8"))
-    assert [n[0] for n in data["notes"]] == [62]
-
-
 def test_send_nothing_when_no_notes(fl, tmp_path):
     run(load(SEND, tmp_path))
     assert not (tmp_path / "outbox.json").exists()
     assert "Aucune note" in fl.messages[-1]
-
-
-def test_send_creates_the_exchange_folder(fl, tmp_path):
-    fl.score.notes = [FakeNote()]
-    run(load(SEND, tmp_path / "FL Multiplayer"))
-    assert (tmp_path / "FL Multiplayer" / "outbox.json").exists()
-
-
-# -- Recevoir ------------------------------------------------------------------------
 
 
 def write_inbox(folder, notes, ppq=96, sender="Alice"):
@@ -208,3 +208,19 @@ def test_send_refuses_an_unsupported_resolution(fl, tmp_path):
     run(load(SEND, tmp_path))
     assert not (tmp_path / "outbox.json").exists()
     assert "résolution" in fl.messages[-1]
+
+
+def test_send_only_the_selection_when_there_is_one(fl, tmp_path):
+    a, b = FakeNote(60), FakeNote(62)
+    b.selected = True
+    fl.score.notes = [a, b]
+    run(load(SEND, tmp_path))
+    data = json.loads((tmp_path / "outbox.json").read_text(encoding="utf-8"))
+    assert [n[0] for n in data["notes"]] == [62]
+
+
+def test_send_without_exchange_folder_asks_to_start_the_relay(fl, tmp_path):
+    fl.score.notes = [FakeNote()]
+    run(load(SEND, tmp_path / "missing"))
+    assert not (tmp_path / "missing").exists()
+    assert "relais" in fl.messages[-1]
