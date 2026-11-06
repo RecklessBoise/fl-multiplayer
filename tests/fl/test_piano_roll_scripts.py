@@ -121,10 +121,12 @@ def test_send_has_no_dialog_so_it_runs_once(fl):
 
 
 @pytest.mark.parametrize("path", [SEND, RECEIVE])
-def test_scripts_never_create_folders(path):
-    # FL's embedded Python fails on mkdir (SystemError, seen in FL 2026).
+def test_scripts_only_open_files(path):
+    # FL's embedded Python fails on mkdir and os.replace (SystemError, seen in FL 2026);
+    # open() for reading and writing works.
     source = path.read_text(encoding="utf-8")
-    assert "makedirs" not in source and "mkdir" not in source
+    for call in ("makedirs", "mkdir", "replace(", "rename(", "remove(", "unlink("):
+        assert call not in source, call
 
 
 def test_send_writes_every_note(fl, tmp_path):

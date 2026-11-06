@@ -99,3 +99,13 @@ def test_sender_name_is_sanitised(tmp_path):
     box.write_inbox("Bob\x1b[2J\n" + "x" * 100, 96, [])
     sender = json.loads((tmp_path / INBOX).read_text(encoding="utf-8"))["from"]
     assert sender.isprintable() and len(sender) <= 40 and sender.startswith("Bob")
+
+
+def test_outbox_still_being_written_is_left_for_later(tmp_path):
+    # The FL script can't write atomically: wait until the file has settled.
+    now = [2_000.0]
+    box = Mailbox(tmp_path, wall_clock=lambda: now[0])
+    write_outbox(tmp_path, mtime=int(2_000.0 * 1e9))  # written just now
+    assert box.take_outbox() is None
+    now[0] += 0.5
+    assert box.take_outbox() is not None
