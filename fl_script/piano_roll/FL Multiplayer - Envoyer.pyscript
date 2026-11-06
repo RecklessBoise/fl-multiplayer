@@ -1,0 +1,68 @@
+"""FL Multiplayer - Envoyer : envoie les notes de ce piano roll à l'autre participant.
+
+Le relais (« flmp join ») doit tourner : il récupère les notes et les envoie au salon.
+Chez l'autre, « FL Multiplayer - Recevoir » les place dans son piano roll.
+Projet indépendant, non affilié à Image-Line.
+"""
+
+import json
+import os
+
+import flpianoroll as flp
+
+EXCHANGE_DIR = os.path.join(
+    os.path.expanduser("~"),
+    "Documents",
+    "Image-Line",
+    "FL Studio",
+    "Settings",
+    "Piano roll scripts",
+    "FL Multiplayer",
+)
+SELECTED = "Seulement les notes sélectionnées"
+MAX_NOTES = 4000
+
+
+def createDialog():
+    form = flp.ScriptDialog(
+        "FL Multiplayer - Envoyer",
+        "Envoie les notes de ce pattern à l'autre participant. Le relais doit tourner.",
+    )
+    form.AddInputCheckbox(SELECTED, False, "N'envoyer que les notes sélectionnées")
+    return form
+
+
+def _unit(x):
+    return round(min(1.0, max(0.0, float(x))), 4)
+
+
+def _plural(n):
+    return "1 note" if n == 1 else str(n) + " notes"
+
+
+def apply(form):
+    only_selected = bool(form.GetInputValue(SELECTED))
+    notes = []
+    for i in range(flp.score.noteCount):
+        n = flp.score.getNote(i)
+        if only_selected and not n.selected:
+            continue
+        notes.append(
+            [int(n.number), int(n.time), int(n.length), _unit(n.velocity), _unit(n.pan),
+             _unit(n.release)]
+        )
+    if not notes:
+        flp.Utils.ShowMessage("Aucune note à envoyer.")
+        return
+    if len(notes) > MAX_NOTES:
+        flp.Utils.ShowMessage("Trop de notes (" + str(len(notes)) + ") : 4000 au maximum.")
+        return
+    os.makedirs(EXCHANGE_DIR, exist_ok=True)
+    tmp = os.path.join(EXCHANGE_DIR, ".outbox.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"flmp": 1, "ppq": int(flp.score.PPQ), "notes": notes}, f)
+    os.replace(tmp, os.path.join(EXCHANGE_DIR, "outbox.json"))
+    flp.Utils.ShowMessage(
+        _plural(len(notes)) + " prêtes à partir. Le Terminal du relais doit afficher "
+        "« Pattern envoyé ». Votre partenaire lance ensuite « FL Multiplayer - Recevoir »."
+    )

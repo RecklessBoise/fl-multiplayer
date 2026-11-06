@@ -1,0 +1,96 @@
+"""FL Multiplayer - Recevoir : place ici le dernier pattern reçu de l'autre participant.
+
+Ouvrez d'abord le piano roll du bon channel : le script ne peut pas le choisir.
+Projet indépendant, non affilié à Image-Line.
+"""
+
+import json
+import os
+
+import flpianoroll as flp
+
+EXCHANGE_DIR = os.path.join(
+    os.path.expanduser("~"),
+    "Documents",
+    "Image-Line",
+    "FL Studio",
+    "Settings",
+    "Piano roll scripts",
+    "FL Multiplayer",
+)
+MODE = "Mode"
+MAX_NOTES = 4000
+
+
+def createDialog():
+    form = flp.ScriptDialog(
+        "FL Multiplayer - Recevoir",
+        "Place ici le dernier pattern reçu. Ouvrez d'abord le piano roll du bon channel.",
+    )
+    form.AddInputCombo(MODE, ["Remplacer les notes", "Ajouter aux notes"], 0, "")
+    return form
+
+
+def _int(x, low, high):
+    if isinstance(x, bool) or not isinstance(x, int) or not low <= x <= high:
+        raise ValueError("bad integer")
+    return x
+
+
+def _unit(x):
+    if isinstance(x, bool) or not isinstance(x, (int, float)):
+        raise ValueError("bad number")
+    x = float(x)
+    if x != x or not 0.0 <= x <= 1.0:
+        raise ValueError("bad number")
+    return x
+
+
+def _read():
+    path = os.path.join(EXCHANGE_DIR, "inbox.json")
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    ppq = _int(data["ppq"], 24, 1920)
+    raw_notes = data["notes"]
+    if not isinstance(raw_notes, list) or len(raw_notes) > MAX_NOTES:
+        raise ValueError("bad notes")
+    notes = []
+    for raw in raw_notes:
+        if not isinstance(raw, list) or len(raw) != 6:
+            raise ValueError("bad note")
+        notes.append(
+            (_int(raw[0], 0, 131), _int(raw[1], 0, 2**31 - 1), _int(raw[2], 0, 2**31 - 1),
+             _unit(raw[3]), _unit(raw[4]), _unit(raw[5]))
+        )
+    sender = data.get("from")
+    return (sender if isinstance(sender, str) else "?")[:40], ppq, notes
+
+
+def apply(form):
+    try:
+        got = _read()
+    except (OSError, ValueError, KeyError, TypeError):
+        flp.Utils.ShowMessage("Pattern reçu illisible : rien n'a été modifié.")
+        return
+    if got is None:
+        flp.Utils.ShowMessage(
+            "Aucun pattern reçu pour l'instant. Le relais affiche « Pattern reçu » quand il arrive."
+        )
+        return
+    sender, ppq, notes = got
+    target = int(flp.score.PPQ)
+    if int(form.GetInputValue(MODE)) == 0:
+        flp.score.clearNotes(True)  # True: every note, not only the selection
+    for pitch, time, length, velocity, pan, release in notes:
+        n = flp.Note()
+        n.number = pitch
+        n.time = time * target // ppq
+        n.length = max(1, length * target // ppq) if length else 0
+        n.velocity = velocity
+        n.pan = pan
+        n.release = release
+        flp.score.addNote(n)
+    count = "1 note" if len(notes) == 1 else str(len(notes)) + " notes"
+    flp.Utils.ShowMessage(count + " de " + sender + " placées dans ce piano roll.")
