@@ -72,9 +72,21 @@ Note : 16383 est impair, donc un pan centré se relit à environ 6e-5 près de 0
 | client → serveur | `{"type":"hello"}` (diagnostic), `{"type":"join","room","name","secret"?,"proto":1}` |
 | client → serveur | `{"type":"change","kind","index","value"}` |
 | client → serveur | `{"type":"snapshot","for":<pair>,"changes":[[kind,index,value],…]}` (uniquement en réponse à une demande) |
+| client → serveur | `{"type":"pattern","ppq","notes":[[hauteur,temps,durée,vélocité,pan,release],…]}` (v0.2) |
 | serveur → client | `welcome`, `peer_joined`, `peer_left`, `error` (`code`, `message`) |
 | serveur → client | `{"type":"change",…,"seq","from"}`, diffusé à **tous**, émetteur compris |
 | serveur → client | `{"type":"snapshot_request","for","base_seq"}` puis, au nouvel arrivant, `{"type":"snapshot","from","seq","base_seq","changes"}` |
+| serveur → client | `{"type":"pattern","from","ppq","notes"}`, diffusé aux **autres** membres, jamais stocké (v0.2) |
+
+### Patterns du piano roll (v0.2)
+
+- Validation commune au relais et au serveur (`flmp_core.pattern`) : `ppq` entier de 24 à 1920 ;
+  au plus 4000 notes ; hauteur 0–131 ; temps et durée entiers de 0 à 2³¹−1 ; vélocité, pan et
+  release entre 0 et 1. Un pattern invalide est refusé (`bad_message`) et n'est pas relayé.
+- Côté Mac, le script de piano roll « Envoyer » écrit `outbox.json` dans
+  `Piano roll scripts/FL Multiplayer/` ; le relais l'envoie dès qu'il change (pas au démarrage).
+  À la réception, le relais écrit `inbox.json` d'un seul coup (fichier temporaire puis
+  renommage), que le script « Recevoir » lit et valide à nouveau.
 
 ### Le dernier qui écrit gagne
 

@@ -12,10 +12,12 @@ côté, quand il veut.
 - **Tempo.**
 - **Mixer :** volume, pan, mute et solo de chaque piste.
 - **Channel rack :** volume, pan et mute de chaque channel (FL avec API 33 ou plus).
+- **Notes du piano roll, à la demande :** un clic pour envoyer un pattern, un clic chez l'autre
+  pour le recevoir (voir « Envoyer un pattern » plus bas).
 
-**Ce qui ne l'est pas :** la lecture et l'arrêt (chacun reste libre), les notes, la playlist, les
-plugins, les samples et l'audio. Chacun doit
-donc ouvrir **le même projet** (envoyez-vous le fichier `.flp` et les samples avant de commencer).
+**Ce qui ne l'est pas :** la lecture et l'arrêt (chacun reste libre), les notes en direct pendant
+qu'on les dessine, la playlist, les plugins, les samples et l'audio. Chacun doit donc ouvrir
+**le même projet** (envoyez-vous le fichier `.flp` et les samples avant de commencer).
 
 ```
 [FL Studio A] ⇄ script MIDI ⇄ ports MIDI ⇄ relais A ⇄ Internet (wss) ⇄ serveur ⇄ relais B ⇄ … ⇄ [FL Studio B]
@@ -58,7 +60,9 @@ uv run flmp install-script
 ```
 
 La première fois, `uv` télécharge ce qu'il faut (une minute environ). Le script est copié dans
-`Documents/Image-Line/FL Studio/Settings/Hardware/FL Multiplayer/`.
+`Documents/Image-Line/FL Studio/Settings/Hardware/FL Multiplayer/`, et les deux scripts de piano
+roll (« FL Multiplayer - Envoyer » et « - Recevoir ») dans
+`Documents/Image-Line/FL Studio/Settings/Piano roll scripts/`.
 
 ### 4. Lancer le relais
 
@@ -113,6 +117,24 @@ créez deux bus nommés exactement `FLMP In` et `FLMP Out`. Lancez ensuite `flmp
 
 ---
 
+## Envoyer un pattern (notes du piano roll)
+
+FL ne permet pas aux scripts de suivre les notes **pendant** qu'on les dessine. FL Multiplayer les
+envoie donc à la demande, en deux clics. Les deux relais doivent tourner.
+
+1. **Chez celui qui envoie :** ouvrez le piano roll du pattern, puis, dans le menu du piano roll
+   (la petite flèche en haut à gauche), **Tools > Scripting > FL Multiplayer - Envoyer**. Cochez
+   « Seulement les notes sélectionnées » pour n'envoyer qu'une partie. Le Terminal du relais
+   affiche « Pattern envoyé (N notes) ».
+2. **Chez l'autre :** son Terminal affiche « Pattern reçu de … ». Il ouvre le piano roll **du même
+   channel** (le script ne peut pas le choisir lui-même), puis **Tools > Scripting > FL
+   Multiplayer - Recevoir**, et choisit :
+   - **Remplacer les notes** : les notes du piano roll sont remplacées par celles reçues ;
+   - **Ajouter aux notes** : les notes reçues s'ajoutent à celles déjà là.
+
+Hauteur, position, durée, vélocité, pan et release sont transmis. Si vos projets n'ont pas la
+même résolution (PPQ), les positions sont converties. 4000 notes au maximum par envoi.
+
 ## Questions fréquentes
 
 **Faut-il le même projet des deux côtés ?** Oui. Les pistes et les channels sont repérés par leur
@@ -147,7 +169,7 @@ retrait d'un solo démute toutes les pistes. FL Multiplayer reproduit la même c
 
 **Ça marche sous Windows ?** Pas en v0.1.0 : le guide et les tests visent macOS.
 
-## Limites connues (v0.1.0)
+## Limites connues
 
 - Test réel fait sur une seule machine avec un faux participant (`flmp monitor`) ; pas encore à
   deux Mac.
@@ -155,6 +177,9 @@ retrait d'un solo démute toutes les pistes. FL Multiplayer reproduit la même c
 - Un mute changé pendant un solo n'est transmis qu'au retrait du solo.
 - Le solo des channels, les sends, les effets et les noms ne sont pas synchronisés.
 - Avant l'API FL 33, le channel rack n'est pas synchronisé.
+- Les notes du piano roll passent à la demande (Envoyer / Recevoir), pas en direct. Le pattern
+  reçu remplace ou complète le piano roll **ouvert** : ouvrez le bon channel avant de recevoir.
+  Seul le dernier pattern reçu est gardé.
 
 ## Pour les développeurs
 

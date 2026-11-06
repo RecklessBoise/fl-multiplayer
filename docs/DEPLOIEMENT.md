@@ -69,6 +69,12 @@ adresse IP de chaque utilisateur, que Fly.io transmet dans l'en-tête `Fly-Clien
 **N'activez jamais ce réglage ailleurs** : il permettrait à n'importe qui de se faire passer pour
 une autre adresse.
 
+## Mettre à jour le serveur
+
+Après une nouvelle version (par exemple la v0.2, qui ajoute l'envoi de patterns), le serveur doit
+être redéployé : sur Render, page du service > **Manual Deploy > Deploy latest commit** ; sur
+Fly.io, `fly deploy`. Tant que ce n'est pas fait, un pattern envoyé est refusé par le serveur.
+
 ## Ce que fait le serveur (et ne fait pas)
 
 - Il ne stocke rien : pas de base de données, pas de fichiers. Un salon disparaît quand son
