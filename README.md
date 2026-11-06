@@ -1,7 +1,8 @@
 # FL Multiplayer
 
-> **Version 0.1.0.** Testé dans FL Studio 2026 (API FL 45) sur macOS, par une seule machine
-> reliée à un faux participant. Le test à deux Mac réels n'a pas encore été fait.
+> **Version 0.2.0.** Testé dans FL Studio 2026 (API FL 45) sur macOS. Une vraie session à deux
+> Mac a confirmé le tempo dans les deux sens ; la lecture indépendante et l'envoi de patterns ont
+> été vérifiés dans FL avec un participant simulé, pas encore à deux Mac.
 
 Jouez à deux sur le même projet FL Studio, chacun chez soi : quand l'un change le tempo ou
 bouge un fader, l'autre voit la même chose dans son FL. Chacun lance et arrête la lecture de son
@@ -94,7 +95,7 @@ Le relais doit tourner pendant ce réglage. Dans FL : **Options > MIDI settings*
 3. N'activez pas `FLMP Out` dans *Input*, et ne donnez ce numéro de port à aucun autre appareil.
 
 Vérification : **View > Script output**, onglet **FLMP In** : vous devez lire
-`FL Multiplayer 0.1.0 chargé (API FL …)`, sans message d'erreur.
+`FL Multiplayer 0.2.0 chargé (API FL …)`, sans message d'erreur.
 
 FL garde ces réglages. Les fois suivantes : lancez le relais (étape 4), puis ouvrez FL.
 
@@ -167,7 +168,7 @@ MIDI. C'est sans effet : le relais les ignore.
 **Quand je retire un solo, tous les mutes disparaissent.** C'est le comportement de FL Studio : le
 retrait d'un solo démute toutes les pistes. FL Multiplayer reproduit la même chose chez l'autre.
 
-**Ça marche sous Windows ?** Pas en v0.1.0 : le guide et les tests visent macOS.
+**Ça marche sous Windows ?** Pas pour l'instant : le guide et les tests visent macOS.
 
 ## Limites connues
 
@@ -226,6 +227,7 @@ creates the MIDI ports itself; IAC buses also work), which connects to a small W
 server (free deployment on Render, or Fly.io; see `docs/DEPLOIEMENT.md`). Rooms are protected by
 a shared code and an optional password; the server keeps no data.
 
-Version 0.1.0 was tested inside FL Studio 2026 (API 45) on one Mac with a simulated peer; a real
-two-Mac session has not been tested yet. Not affiliated with Image-Line; "FL Studio" is a
+Version 0.2.0 was tested inside FL Studio 2026 (API 45). A real two-Mac session confirmed the
+tempo both ways; independent transport and piano roll pattern sending were checked inside FL with
+a simulated peer, not yet between two Macs. Not affiliated with Image-Line; "FL Studio" is a
 trademark of Image-Line Software. MIT licensed.

@@ -75,5 +75,5 @@ def test_render_config_trusts_no_header():
 def test_versions_agree():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     script = (ROOT / "fl_script" / "device_FLMultiplayer.py").read_text(encoding="utf-8")
-    assert project["version"] == "0.1.0"
-    assert 'VERSION = "0.1.0"' in script
+    assert project["version"] == "0.2.0"
+    assert 'VERSION = "0.2.0"' in script
