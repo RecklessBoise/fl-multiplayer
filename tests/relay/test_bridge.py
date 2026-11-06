@@ -451,3 +451,23 @@ async def test_received_pattern_lands_in_the_inbox(server, clients, tmp_path):
         data = json.loads(inbox.read_text(encoding="utf-8"))
         assert data["from"] == "Bob" and data["ppq"] == 192
         assert data["notes"] == [[60, 0, 192, 1.0, 0.5, 0.5]]
+
+
+async def test_inbox_write_failure_is_reported_clearly(server, clients, tmp_path, caplog):
+    url = await server()
+    io = QueueMidiIO()
+    relay = Relay(io, url, "ROOM1", "Alice", exchange_dir=tmp_path)
+
+    def boom(*_a, **_k):
+        raise OSError("disk full")
+
+    relay._mailbox.write_inbox = boom
+    async with running(relay):
+        obs = await joined_observer(clients, url, name="Bob")
+        await _settle_snapshot(io)
+        await obs.send(type="pattern", ppq=96, notes=[[60, 0, 96, 1, 0.5, 0.5]])
+        for _ in range(100):
+            if "Impossible d'enregistrer le pattern reçu" in caplog.text:
+                break
+            await asyncio.sleep(0.02)
+        assert "Impossible d'enregistrer le pattern reçu" in caplog.text

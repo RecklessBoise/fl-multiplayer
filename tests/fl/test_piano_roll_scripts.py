@@ -200,3 +200,11 @@ def test_receive_rejects_a_bad_inbox_without_touching_notes(fl, tmp_path, conten
     run(load(RECEIVE, tmp_path))
     assert [n.number for n in fl.score.notes] == [50]
     assert "illisible" in fl.messages[-1]
+
+
+def test_send_refuses_an_unsupported_resolution(fl, tmp_path):
+    fl.score.PPQ = 4000
+    fl.score.notes = [FakeNote()]
+    run(load(SEND, tmp_path))
+    assert not (tmp_path / "outbox.json").exists()
+    assert "résolution" in fl.messages[-1]

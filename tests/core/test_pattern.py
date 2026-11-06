@@ -2,7 +2,7 @@ import math
 
 import pytest
 from flmp_core.messages import ProtocolError
-from flmp_core.pattern import MAX_NOTES, check_pattern, rescale
+from flmp_core.pattern import MAX_NOTES, check_pattern
 
 NOTE = [69, 192, 48, 0.78125, 0.5, 0.5]
 
@@ -60,14 +60,3 @@ def test_notes_must_be_a_bounded_list():
     with pytest.raises(ProtocolError):
         check_pattern(96, [NOTE] * (MAX_NOTES + 1))
     assert len(check_pattern(96, [NOTE] * MAX_NOTES)[1]) == MAX_NOTES
-
-
-def test_rescale_between_resolutions():
-    notes = [(60, 192, 48, 0.8, 0.5, 0.5)]
-    assert rescale(notes, 96, 96) == notes
-    assert rescale(notes, 96, 192) == [(60, 384, 96, 0.8, 0.5, 0.5)]
-    assert rescale(notes, 192, 96) == [(60, 96, 24, 0.8, 0.5, 0.5)]
-
-
-def test_rescale_never_makes_a_note_vanish():
-    assert rescale([(60, 1, 1, 0.8, 0.5, 0.5)], 960, 96) == [(60, 0, 1, 0.8, 0.5, 0.5)]

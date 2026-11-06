@@ -62,3 +62,40 @@ def test_inbox_is_written_atomically(tmp_path):
     data = json.loads((tmp_path / INBOX).read_text(encoding="utf-8"))
     assert data == {"flmp": 1, "from": "Bob", "ppq": 96, "notes": [[60, 0, 96, 1.0, 0.5, 0.5]]}
     assert sorted(p.name for p in tmp_path.iterdir()) == [INBOX]  # no temp file left
+
+
+def test_new_file_with_same_mtime_and_size_is_still_taken(tmp_path):
+    # Coarse timestamps: the script replaces the file, so its inode changes.
+    box = Mailbox(tmp_path)
+    write_outbox(tmp_path, mtime=1_000_000_000)
+    assert box.take_outbox() is not None
+    tmp = tmp_path / "other.json"
+    tmp.write_text((tmp_path / OUTBOX).read_text(encoding="utf-8"), encoding="utf-8")
+    os.utime(tmp, ns=(1_000_000_000, 1_000_000_000))
+    os.replace(tmp, tmp_path / OUTBOX)
+    assert box.take_outbox() is not None
+
+
+def test_deeply_nested_outbox_does_not_raise(tmp_path, caplog):
+    box = Mailbox(tmp_path)
+    (tmp_path / OUTBOX).write_text("[" * 100_000 + "]" * 100_000, encoding="utf-8")
+    assert box.take_outbox() is None
+    assert "ignoré" in caplog.text
+
+
+def test_inbox_writes_are_rate_limited(tmp_path):
+    now = [100.0]
+    box = Mailbox(tmp_path, clock=lambda: now[0])
+    assert box.write_inbox("A", 96, [(60, 0, 1, 0.5, 0.5, 0.5)]) is True
+    now[0] += 0.5
+    assert box.write_inbox("A", 96, [(61, 0, 1, 0.5, 0.5, 0.5)]) is False  # too soon
+    now[0] += 1.0
+    assert box.write_inbox("A", 96, [(62, 0, 1, 0.5, 0.5, 0.5)]) is True
+    assert json.loads((tmp_path / INBOX).read_text(encoding="utf-8"))["notes"][0][0] == 62
+
+
+def test_sender_name_is_sanitised(tmp_path):
+    box = Mailbox(tmp_path)
+    box.write_inbox("Bob\x1b[2J\n" + "x" * 100, 96, [])
+    sender = json.loads((tmp_path / INBOX).read_text(encoding="utf-8"))["from"]
+    assert sender.isprintable() and len(sender) <= 40 and sender.startswith("Bob")

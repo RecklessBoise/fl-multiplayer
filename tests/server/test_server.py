@@ -373,3 +373,20 @@ async def test_pattern_needs_a_room(server, clients):
     a = await clients(await server())
     await a.send(type="pattern", ppq=96, notes=NOTES)
     assert (await a.recv_type("error"))["code"] == "not_joined"
+
+
+async def test_patterns_have_their_own_low_rate_limit(server, clients):
+    # Each pattern can be large: a separate budget keeps the server's work bounded.
+    url = await server(pattern_rate=0.01, pattern_burst=2)
+    a, b = await clients(url), await clients(url)
+    await a.join()
+    await b.join(name="Bob")
+    req = await a.recv_type("snapshot_request")
+    await a.send(type="snapshot", **{"for": req["for"]}, changes=[])
+    await b.recv_type("snapshot")
+    for _ in range(3):
+        await a.send(type="pattern", ppq=96, notes=NOTES)
+    await b.recv_type("pattern")
+    await b.recv_type("pattern")
+    assert (await a.recv_type("error"))["code"] == "rate_limited"
+    await b.nothing()
