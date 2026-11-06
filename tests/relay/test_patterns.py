@@ -3,6 +3,7 @@
 import json
 import os
 import time
+from pathlib import Path
 
 import pytest
 from flmp_relay.patterns import INBOX, OUTBOX, Mailbox
@@ -89,15 +90,42 @@ def test_deeply_nested_outbox_does_not_raise(tmp_path, caplog):
     assert "ignoré" in caplog.text
 
 
-def test_inbox_writes_are_rate_limited(tmp_path):
+def test_inbox_keeps_the_latest_pattern_when_they_come_too_fast(tmp_path):
     now = [100.0]
     box = Mailbox(tmp_path, clock=lambda: now[0])
     assert box.write_inbox("A", 96, [(60, 0, 1, 0.5, 0.5, 0.5)]) is True
-    now[0] += 0.5
-    assert box.write_inbox("A", 96, [(61, 0, 1, 0.5, 0.5, 0.5)]) is False  # too soon
+    now[0] += 0.3
+    assert box.write_inbox("A", 96, [(61, 0, 1, 0.5, 0.5, 0.5)]) is False  # held, not lost
+    assert box.write_inbox("A", 96, [(62, 0, 1, 0.5, 0.5, 0.5)]) is False  # latest wins
+    assert box.flush_inbox() is None  # still too soon
     now[0] += 1.0
-    assert box.write_inbox("A", 96, [(62, 0, 1, 0.5, 0.5, 0.5)]) is True
+    assert box.flush_inbox() == ("A", 1)
     assert json.loads((tmp_path / INBOX).read_text(encoding="utf-8"))["notes"][0][0] == 62
+    assert box.flush_inbox() is None
+
+
+def test_failed_inbox_write_does_not_use_up_the_interval(tmp_path, monkeypatch):
+    now = [100.0]
+    box = Mailbox(tmp_path, clock=lambda: now[0])
+    real = Path.write_text
+
+    def fail_once(self, *a, **k):
+        monkeypatch.setattr(Path, "write_text", real)
+        raise OSError("disk full")
+
+    monkeypatch.setattr(Path, "write_text", fail_once)
+    with pytest.raises(OSError):
+        box.write_inbox("A", 96, [])
+    assert box.write_inbox("A", 96, []) is True  # right away: the failure didn't count
+
+
+def test_empty_outbox_is_left_for_later_without_warning(tmp_path, caplog):
+    box = Mailbox(tmp_path, wall_clock=later)
+    (tmp_path / OUTBOX).write_text("", encoding="utf-8")  # truncated, not written yet
+    assert box.take_outbox() is None
+    assert "ignoré" not in caplog.text
+    write_outbox(tmp_path)
+    assert box.take_outbox() is not None
 
 
 def test_sender_name_is_sanitised(tmp_path):
