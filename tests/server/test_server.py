@@ -327,3 +327,49 @@ def test_ipv6_addresses_are_grouped_by_64():
     assert ip_bucket("2001:db8:1:3::1") != ip_bucket("2001:db8:1:2::1")
     assert ip_bucket("203.0.113.7") == "203.0.113.7"
     assert ip_bucket("not-an-ip") == "not-an-ip"
+
+
+# -- v0.2: piano roll patterns -------------------------------------------------
+
+NOTES = [[69, 192, 48, 0.78125, 0.5, 0.5], [60, 0, 96, 1, 0.5, 0.5]]
+
+
+async def _two_joined(server, clients):
+    url = await server()
+    a, b = await clients(url), await clients(url)
+    pa = (await a.join())["peer"]
+    await b.join(name="Bob")
+    # b's arrival makes a answer a snapshot request; let that settle
+    req = await a.recv_type("snapshot_request")
+    await a.send(type="snapshot", **{"for": req["for"]}, changes=[])
+    await b.recv_type("snapshot")
+    return a, b, pa
+
+
+async def test_pattern_reaches_the_others_but_not_the_sender(server, clients):
+    a, b, pa = await _two_joined(server, clients)
+    await a.send(type="pattern", ppq=96, notes=NOTES)
+    msg = await b.recv_type("pattern")
+    assert msg == {
+        "type": "pattern",
+        "from": pa,
+        "ppq": 96,
+        "notes": [[69, 192, 48, round(0.78125, 4), 0.5, 0.5], [60, 0, 96, 1.0, 0.5, 0.5]],
+    }
+    await a.nothing()
+
+
+async def test_invalid_pattern_is_refused_and_not_relayed(server, clients):
+    a, b, _ = await _two_joined(server, clients)
+    await a.send(type="pattern", ppq=96, notes=[[200, 0, 1, 0.5, 0.5, 0.5]])
+    err = await a.recv_type("error")
+    assert err["code"] == "bad_message"
+    await b.nothing()
+    await a.send(type="pattern", ppq=96, notes=NOTES)  # the connection is still usable
+    await b.recv_type("pattern")
+
+
+async def test_pattern_needs_a_room(server, clients):
+    a = await clients(await server())
+    await a.send(type="pattern", ppq=96, notes=NOTES)
+    assert (await a.recv_type("error"))["code"] == "not_joined"
