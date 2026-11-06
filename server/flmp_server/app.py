@@ -23,6 +23,7 @@ from typing import Any
 
 from flmp_core import PROTOCOL_VERSION
 from flmp_core.messages import ProtocolError, parse_fields
+from flmp_core.pattern import check_pattern
 from websockets.asyncio.server import Server, ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request, Response
@@ -266,13 +267,15 @@ class Hub:
             peer.push({"type": "hello", "server": "flmp", "proto": PROTOCOL_VERSION})
         elif kind == "join":
             self._join(peer, msg)
-        elif kind in ("change", "snapshot"):
+        elif kind in ("change", "snapshot", "pattern"):
             if peer.room is None:
                 raise ClientError("not_joined", "join a room first")
             if kind == "change":
                 self._change(peer, peer.room, msg)
-            else:
+            elif kind == "snapshot":
                 self._snapshot(peer, peer.room, msg)
+            else:
+                self._pattern(peer, peer.room, msg)
         else:
             raise ClientError("bad_message", "unknown message type")
 
@@ -365,6 +368,17 @@ class Hub:
                 "seq": room.seq,
                 "from": peer.id,
             }
+        )
+
+    def _pattern(self, peer: Peer, room: Room, msg: dict[str, Any]) -> None:
+        """A piano roll pattern: relayed to the others as is, never stored."""
+        try:
+            ppq, notes = check_pattern(msg.get("ppq"), msg.get("notes"))
+        except ProtocolError as exc:
+            raise ClientError("bad_message", f"pattern: {exc}") from exc
+        room.broadcast(
+            {"type": "pattern", "from": peer.id, "ppq": ppq, "notes": [list(n) for n in notes]},
+            exclude=peer.id,
         )
 
     def _snapshot(self, peer: Peer, room: Room, msg: dict[str, Any]) -> None:
