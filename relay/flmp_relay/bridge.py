@@ -17,17 +17,20 @@ import logging
 import random
 import time
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 from flmp_core import PROTOCOL_VERSION
 from flmp_core.messages import NETWORK_KINDS, Change, ProtocolError, decode, encode, parse_fields
+from flmp_core.pattern import check_pattern
 from flmp_core.throttle import Throttle
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 
 from flmp_relay.lww import OwnWrites
 from flmp_relay.midi import MidiIO
+from flmp_relay.patterns import Mailbox
 
 log = logging.getLogger("flmp.relay")
 
@@ -87,8 +90,10 @@ class Relay:
         snapshot_wait: float = 15.0,
         collect_timeout: float = 5.0,
         clock: Callable[[], float] = time.monotonic,
+        exchange_dir: Path | None = None,
     ) -> None:
         check_server_url(server, allow_insecure)
+        self._mailbox = Mailbox(exchange_dir) if exchange_dir is not None else None
         self.midi = midi
         self.server = server
         self.room = room
@@ -125,6 +130,7 @@ class Relay:
     async def run(self) -> None:
         """Stay connected until `stop()`; raises FatalJoinError if refused."""
         reader = asyncio.create_task(self._midi_reader())
+        watcher = asyncio.create_task(self._outbox_watcher()) if self._mailbox else None
         attempt = 0
         try:
             while not self._stop.is_set():
@@ -151,9 +157,55 @@ class Relay:
                 with contextlib.suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(self._stop.wait(), delay)
         finally:
-            reader.cancel()
-            await asyncio.gather(reader, return_exceptions=True)
+            tasks = [t for t in (reader, watcher) if t is not None]
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
             self.connected.clear()
+
+    async def _outbox_watcher(self, interval: float = 0.25) -> None:
+        """Send each pattern the piano roll script writes to the outbox."""
+        mailbox = self._mailbox
+        if mailbox is None:
+            return
+        while True:
+            await asyncio.sleep(interval)
+            pattern = mailbox.take_outbox()
+            if pattern is None:
+                continue
+            ws = self._live
+            if ws is None:
+                log.warning(
+                    "Pas connecté au salon : pattern non envoyé. Renvoyez-le une fois connecté."
+                )
+                continue
+            ppq, notes = pattern
+            msg = {"type": "pattern", "ppq": ppq, "notes": [list(n) for n in notes]}
+            try:
+                await ws.send(json.dumps(msg))
+                log.info("Pattern envoyé (%d notes)", len(notes))
+            except ConnectionClosed:
+                log.warning(
+                    "Connexion perdue : pattern non envoyé. Renvoyez-le une fois reconnecté."
+                )
+
+    def _on_pattern(self, msg: dict[str, Any]) -> None:
+        if self._mailbox is None:
+            return
+        try:
+            ppq, notes = check_pattern(msg.get("ppq"), msg.get("notes"))
+        except ProtocolError:
+            log.warning("Pattern reçu invalide ignoré")
+            return
+        sender = msg.get("from")
+        name = self._names.get(sender, "?") if isinstance(sender, str) else "?"
+        self._mailbox.write_inbox(name, ppq, notes)
+        log.info(
+            "Pattern reçu de %s (%d notes) : ouvrez le piano roll du même channel, puis "
+            "Tools > Scripting > FL Multiplayer - Recevoir",
+            clean(name),
+            len(notes),
+        )
 
     async def stop(self) -> None:
         self._stop.set()
@@ -337,6 +389,8 @@ class Relay:
             self._on_snapshot_request(msg)
         elif kind == "snapshot":
             await self._on_snapshot(msg)
+        elif kind == "pattern":
+            self._on_pattern(msg)
         elif kind == "peer_joined":
             peer, name = msg.get("peer"), msg.get("name")
             if isinstance(peer, str) and isinstance(name, str):
